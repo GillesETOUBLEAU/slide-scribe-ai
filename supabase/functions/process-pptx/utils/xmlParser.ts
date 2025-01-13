@@ -12,26 +12,21 @@ export function extractTextContent(node: any): string[] {
   const textContents: string[] = [];
   
   function walkNode(n: any) {
-    // Handle direct text content
-    if (n.type === 'text' && typeof n.content === 'string') {
-      const text = n.content.trim();
-      if (text) textContents.push(text);
+    // Handle PowerPoint specific text containers
+    if (n.name === 'p:txBody' || n.name === 'a:p') {
+      const texts = extractParagraphText(n);
+      textContents.push(...texts);
       return;
     }
     
-    // Handle XML text elements
-    if (n.name === 'a:t') {
-      let text = '';
-      if (Array.isArray(n.children)) {
-        text = n.children
-          .filter((child: any) => child.type === 'text')
-          .map((child: any) => child.content)
-          .join('')
-          .trim();
-      } else if (n.content) {
-        text = String(n.content).trim();
+    // Process shapes and other text containers
+    if (n.name === 'p:sp' || n.name === 'p:graphicFrame') {
+      // Look for text body within shapes
+      const txBody = findNode(n, 'p:txBody');
+      if (txBody) {
+        const texts = extractParagraphText(txBody);
+        textContents.push(...texts);
       }
-      if (text) textContents.push(text);
     }
     
     // Recursively process children
@@ -41,40 +36,93 @@ export function extractTextContent(node: any): string[] {
   }
   
   walkNode(node);
-  return textContents;
+  return textContents.filter(text => text.trim() !== '');
 }
 
-export function findTitle(node: any): string {
-  let title = '';
+function extractParagraphText(node: any): string[] {
+  const texts: string[] = [];
   
-  function walkTitleNode(n: any): boolean {
-    if (n.name === 'p:title' || n.name === 'p:cSld') {
-      const titleTexts = extractTextContent(n);
-      if (titleTexts.length > 0) {
-        title = titleTexts.join(' ');
-        return true;
+  function walkTextNode(n: any) {
+    // Handle direct text content
+    if (n.type === 'text') {
+      const text = n.content?.toString().trim();
+      if (text) texts.push(text);
+      return;
+    }
+    
+    // Handle PowerPoint text run elements
+    if (n.name === 'a:r') {
+      const textElement = findNode(n, 'a:t');
+      if (textElement?.content) {
+        const text = Array.isArray(textElement.content) 
+          ? textElement.content.join('').trim()
+          : textElement.content.toString().trim();
+        if (text) texts.push(text);
       }
     }
     
-    if (n.name === 'p:ph' && n.attributes?.type === 'title') {
-      const parent = n.parent;
-      if (parent) {
-        const texts = extractTextContent(parent);
-        if (texts.length > 0) {
-          title = texts.join(' ');
-          return true;
+    // Recursively process children
+    if (Array.isArray(n.children)) {
+      n.children.forEach(walkTextNode);
+    }
+  }
+  
+  walkTextNode(node);
+  return texts;
+}
+
+function findNode(node: any, nodeName: string): any {
+  if (node.name === nodeName) return node;
+  
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) {
+      const found = findNode(child, nodeName);
+      if (found) return found;
+    }
+  }
+  
+  return null;
+}
+
+export function findTitle(node: any): string {
+  // Look for title placeholder
+  const titleShape = findShapeByType(node, 'title');
+  if (titleShape) {
+    const texts = extractTextContent(titleShape);
+    if (texts.length > 0) return texts.join(' ');
+  }
+  
+  // Look for first shape with text as fallback
+  const firstShape = findNode(node, 'p:sp');
+  if (firstShape) {
+    const texts = extractTextContent(firstShape);
+    if (texts.length > 0) return texts[0];
+  }
+  
+  return 'Untitled Slide';
+}
+
+function findShapeByType(node: any, type: string): any {
+  function walkShapes(n: any): any {
+    if (n.name === 'p:sp') {
+      const nvSpPr = findNode(n, 'p:nvSpPr');
+      if (nvSpPr) {
+        const ph = findNode(nvSpPr, 'p:ph');
+        if (ph?.attributes?.type === type) {
+          return n;
         }
       }
     }
     
-    if (n.children) {
+    if (Array.isArray(n.children)) {
       for (const child of n.children) {
-        if (walkTitleNode(child)) return true;
+        const found = walkShapes(child);
+        if (found) return found;
       }
     }
-    return false;
+    
+    return null;
   }
   
-  walkTitleNode(node);
-  return title || 'Untitled Slide';
+  return walkShapes(node);
 }
