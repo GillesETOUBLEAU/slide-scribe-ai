@@ -1,7 +1,8 @@
-export interface ProcessedContent {
+export interface FileData {
   metadata: {
     processedAt: string;
-    sheetCount: number;
+    filename: string;
+    slideCount: number;
   };
   slides: Slide[];
 }
