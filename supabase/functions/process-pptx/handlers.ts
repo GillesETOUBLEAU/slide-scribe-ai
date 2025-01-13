@@ -1,4 +1,3 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@1.35.7";
 import JSZip from "https://esm.sh/jszip@3.10.1";
 import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
 import type { FileData } from "./types.ts";
@@ -6,19 +5,27 @@ import type { FileData } from "./types.ts";
 export async function handleFileProcessing(fileId: string, filePath: string) {
   console.log(`Starting processing for file: ${fileId}`);
   
-  // Initialize Supabase client
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
   
   try {
-    // Download the PPTX file
-    const { data: fileData, error: downloadError } = await supabase.storage
-      .from('pptx_files')
-      .download(filePath);
+    // Download the PPTX file using REST API
+    const storageResponse = await fetch(
+      `${supabaseUrl}/storage/v1/object/authenticated/pptx_files/${filePath}`,
+      {
+        headers: {
+          Authorization: `Bearer ${supabaseKey}`,
+          apikey: supabaseKey,
+        },
+      }
+    );
 
-    if (downloadError) throw downloadError;
+    if (!storageResponse.ok) {
+      throw new Error(`Failed to download file: ${storageResponse.statusText}`);
+    }
 
+    const fileData = await storageResponse.arrayBuffer();
+    
     // Process the file
     const processedData = await processFile(fileData);
     
@@ -28,47 +35,89 @@ export async function handleFileProcessing(fileId: string, filePath: string) {
       type: 'application/json',
     });
     
-    const { error: jsonUploadError } = await supabase.storage
-      .from('pptx_files')
-      .upload(jsonPath, jsonBlob, { upsert: true });
+    const jsonUploadResponse = await fetch(
+      `${supabaseUrl}/storage/v1/object/pptx_files/${jsonPath}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${supabaseKey}`,
+          apikey: supabaseKey,
+          'Content-Type': 'application/json',
+        },
+        body: jsonBlob,
+      }
+    );
 
-    if (jsonUploadError) throw jsonUploadError;
+    if (!jsonUploadResponse.ok) {
+      throw new Error(`Failed to upload JSON: ${jsonUploadResponse.statusText}`);
+    }
 
     // Generate and save markdown
     const markdown = generateMarkdown(processedData);
     const markdownPath = filePath.replace('.pptx', '.md');
     const markdownBlob = new Blob([markdown], { type: 'text/markdown' });
     
-    const { error: markdownUploadError } = await supabase.storage
-      .from('pptx_files')
-      .upload(markdownPath, markdownBlob, { upsert: true });
+    const markdownUploadResponse = await fetch(
+      `${supabaseUrl}/storage/v1/object/pptx_files/${markdownPath}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${supabaseKey}`,
+          apikey: supabaseKey,
+          'Content-Type': 'text/markdown',
+        },
+        body: markdownBlob,
+      }
+    );
 
-    if (markdownUploadError) throw markdownUploadError;
+    if (!markdownUploadResponse.ok) {
+      throw new Error(`Failed to upload Markdown: ${markdownUploadResponse.statusText}`);
+    }
 
-    // Update database record
-    const { error: updateError } = await supabase
-      .from('file_conversions')
-      .update({
-        status: 'completed',
-        json_path: jsonPath,
-        markdown_path: markdownPath,
-      })
-      .eq('id', fileId);
+    // Update database record using REST API
+    const updateResponse = await fetch(
+      `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${supabaseKey}`,
+          apikey: supabaseKey,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          status: 'completed',
+          json_path: jsonPath,
+          markdown_path: markdownPath,
+        }),
+      }
+    );
 
-    if (updateError) throw updateError;
+    if (!updateResponse.ok) {
+      throw new Error(`Failed to update record: ${updateResponse.statusText}`);
+    }
 
     return { success: true };
   } catch (error) {
     console.error('Error processing file:', error);
 
-    // Update database record with error
-    await supabase
-      .from('file_conversions')
-      .update({
-        status: 'error',
-        error_message: error instanceof Error ? error.message : 'Unknown error occurred',
-      })
-      .eq('id', fileId);
+    // Update database record with error using REST API
+    await fetch(
+      `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${supabaseKey}`,
+          apikey: supabaseKey,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          status: 'error',
+          error_message: error instanceof Error ? error.message : 'Unknown error occurred',
+        }),
+      }
+    );
 
     throw error;
   }
