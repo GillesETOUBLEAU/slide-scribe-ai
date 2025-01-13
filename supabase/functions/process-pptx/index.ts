@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { handleFileProcessing } from "./handlers.ts";
+import { processFile } from "./process.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,7 +19,7 @@ serve(async (req) => {
       throw new Error('Missing required parameters: fileId and filePath are required');
     }
 
-    const result = await handleFileProcessing(fileId, filePath);
+    const result = await processFile(fileId);
 
     return new Response(
       JSON.stringify(result),
