@@ -23,13 +23,6 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
       slides: []
     };
 
-    // Process presentation.xml first to get metadata
-    const presentationFile = zipContent.files['ppt/presentation.xml'];
-    if (presentationFile) {
-      const presentationContent = await presentationFile.async('string');
-      console.log("Raw presentation.xml content:", presentationContent);
-    }
-
     const slideFiles = Object.keys(zipContent.files)
       .filter(name => name.match(/ppt\/slides\/slide[0-9]+\.xml/))
       .sort((a, b) => {
@@ -45,9 +38,10 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
       try {
         console.log(`\nProcessing ${slideFile}`);
         const slideContent = await zipContent.files[slideFile].async('string');
-        console.log(`Raw slide content for ${slideFile}:`, slideContent);
+        console.log(`Raw slide content length for ${slideFile}:`, slideContent.length);
         
         const xmlDoc = parseXMLContent(slideContent);
+        console.log("XML document structure:", JSON.stringify(xmlDoc, null, 2));
         
         const slideIndex = parseInt(slideFile.match(/slide([0-9]+)\.xml/)?.[1] || '0');
         console.log(`Processing slide ${slideIndex}`);

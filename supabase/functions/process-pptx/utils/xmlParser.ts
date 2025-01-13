@@ -16,7 +16,14 @@ export function extractTextContent(node: any): string[] {
   function walkNode(n: any) {
     if (!n) return;
 
-    // Handle PowerPoint text elements
+    // Handle text content directly
+    if (n.type === 'text' && n.content?.trim()) {
+      console.log("Found direct text content:", n.content.trim());
+      textContents.push(n.content.trim());
+      return;
+    }
+
+    // Handle PowerPoint specific text elements
     if (n.name === 'a:t' && n.children) {
       const text = n.children
         .filter((child: any) => child.type === 'text')
@@ -25,14 +32,34 @@ export function extractTextContent(node: any): string[] {
         .join(' ');
       
       if (text) {
-        console.log("Found text content:", text);
+        console.log("Found PowerPoint text content:", text);
         textContents.push(text);
       }
     }
-    
-    // Handle paragraphs and text runs
-    if (n.name === 'p:sp' || n.name === 'a:p' || n.name === 'a:r') {
-      console.log(`Processing PowerPoint element: ${n.name}`);
+
+    // Handle text in shape properties
+    if (n.name === 'p:txBody' || n.name === 'p:sp') {
+      console.log("Processing text body or shape:", n.name);
+    }
+
+    // Process text runs
+    if (n.name === 'a:r') {
+      console.log("Processing text run");
+      const textRun = n.children
+        ?.filter((child: any) => child.name === 'a:t')
+        .map((tElement: any) => tElement.children
+          ?.filter((textNode: any) => textNode.type === 'text')
+          .map((textNode: any) => textNode.content?.trim())
+          .filter(Boolean)
+          .join(' ')
+        )
+        .filter(Boolean)
+        .join(' ');
+
+      if (textRun) {
+        console.log("Found text run content:", textRun);
+        textContents.push(textRun);
+      }
     }
     
     // Recursively process children
