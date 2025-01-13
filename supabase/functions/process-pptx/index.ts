@@ -62,7 +62,8 @@ serve(async (req) => {
     const presentationXml = await zip.file("ppt/presentation.xml")?.async("string");
     if (presentationXml) {
       const parser = new DOMParser();
-      const presentationDoc = parser.parseFromString(presentationXml, "text/xml");
+      // Use text/html as it's supported by Deno DOM
+      const presentationDoc = parser.parseFromString(presentationXml, "text/html");
       const slideElements = presentationDoc.getElementsByTagName("p:sld");
       structuredContent.metadata.slideCount = slideElements.length;
     }
@@ -163,7 +164,8 @@ serve(async (req) => {
 async function processSlide(zip: JSZip, zipEntry: JSZip.JSZipObject) {
   const slideContent = await zipEntry.async("string");
   const parser = new DOMParser();
-  const slideDoc = parser.parseFromString(slideContent, "text/xml");
+  // Use text/html instead of text/xml
+  const slideDoc = parser.parseFromString(slideContent, "text/html");
   
   // Extract slide number from filename
   const slideIndex = parseInt(zipEntry.name.match(/slide(\d+)\.xml/)?.[1] || "0");
@@ -195,7 +197,7 @@ async function processSlide(zip: JSZip, zipEntry: JSZip.JSZipObject) {
   const notesFile = zip.file(notesPath);
   if (notesFile) {
     const notesContent = await notesFile.async("string");
-    const notesDoc = parser.parseFromString(notesContent, "text/xml");
+    const notesDoc = parser.parseFromString(notesContent, "text/html");
     const noteElements = notesDoc.getElementsByTagName("a:t");
     for (let i = 0; i < noteElements.length; i++) {
       const noteElement = noteElements[i];
