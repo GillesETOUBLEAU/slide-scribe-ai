@@ -7,7 +7,6 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
     console.log("Starting PPTX processing");
     const arrayBuffer = await fileData.arrayBuffer();
     
-    // Create a new JSZip instance and load the file
     const zip = new JSZip();
     const zipContent = await zip.loadAsync(arrayBuffer);
     console.log("PPTX file unzipped successfully");
@@ -21,7 +20,6 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
       slides: []
     };
 
-    // Find all slide XML files
     const slideFiles = Object.keys(zipContent.files)
       .filter(name => name.startsWith('ppt/slides/slide') && name.endsWith('.xml'))
       .sort();
@@ -29,7 +27,6 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
     console.log(`Found ${slideFiles.length} slides`);
     processedContent.metadata.slideCount = slideFiles.length;
 
-    // Process each slide
     for (const [index, slideFile] of slideFiles.entries()) {
       console.log(`Processing slide ${index + 1}: ${slideFile}`);
       const slideContent = await zipContent.files[slideFile].async('string');
@@ -40,24 +37,53 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
         continue;
       }
 
-      // Extract text content from 'a:t' elements
+      // Extract all text content recursively
       const textContents: string[] = [];
-      const walkNode = (node: any) => {
+      const walkTextContent = (node: any) => {
         if (node.name === 'a:t' && node.content) {
           const text = Array.isArray(node.content) 
             ? node.content.join('').trim()
-            : node.content.trim();
+            : String(node.content).trim();
           if (text) textContents.push(text);
         }
         if (node.children) {
-          node.children.forEach(walkNode);
+          node.children.forEach(walkTextContent);
         }
       };
-      walkNode(xmlDoc);
 
-      // First text element is usually the title
-      const title = textContents[0] || `Slide ${index + 1}`;
-      const content = textContents.slice(1);
+      // Find the title specifically (usually in p:title or p:cSld//p:title)
+      let title = `Slide ${index + 1}`;
+      const findTitle = (node: any): boolean => {
+        if (node.name === 'p:title' || node.name === 'p:cSld') {
+          const titleTexts: string[] = [];
+          const walkTitleNode = (n: any) => {
+            if (n.name === 'a:t' && n.content) {
+              const text = Array.isArray(n.content) 
+                ? n.content.join('').trim()
+                : String(n.content).trim();
+              if (text) titleTexts.push(text);
+            }
+            if (n.children) {
+              n.children.forEach(walkTitleNode);
+            }
+          };
+          walkTitleNode(node);
+          if (titleTexts.length > 0) {
+            title = titleTexts.join(' ');
+            return true;
+          }
+        }
+        if (node.children) {
+          for (const child of node.children) {
+            if (findTitle(child)) return true;
+          }
+        }
+        return false;
+      };
+
+      // Process the entire slide content
+      walkTextContent(xmlDoc);
+      findTitle(xmlDoc);
 
       // Extract shapes
       const shapes: Array<{ type: string; text: string }> = [];
@@ -66,19 +92,37 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
           let shapeType = 'shape';
           let shapeText = '';
           
-          const walkForText = (n: any) => {
-            if (n.name === 'a:t' && n.content) {
-              shapeText = Array.isArray(n.content) 
-                ? n.content.join('').trim()
-                : n.content.trim();
+          // Try to find shape type from nvSpPr
+          const findShapeType = (n: any) => {
+            if (n.name === 'p:nvSpPr' || n.name === 'p:cNvPr') {
+              if (n.attributes?.name) {
+                shapeType = n.attributes.name;
+              }
             }
             if (n.children) {
-              n.children.forEach(walkForText);
+              n.children.forEach(findShapeType);
             }
           };
           
-          walkForText(node);
-          shapes.push({ type: shapeType, text: shapeText });
+          // Find shape text content
+          const findShapeText = (n: any) => {
+            if (n.name === 'a:t' && n.content) {
+              const text = Array.isArray(n.content) 
+                ? n.content.join('').trim()
+                : String(n.content).trim();
+              if (text) shapeText = text;
+            }
+            if (n.children) {
+              n.children.forEach(findShapeText);
+            }
+          };
+          
+          findShapeType(node);
+          findShapeText(node);
+          
+          if (shapeText) {
+            shapes.push({ type: shapeType, text: shapeText });
+          }
         }
         if (node.children) {
           node.children.forEach(walkShapes);
@@ -86,7 +130,7 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
       };
       walkShapes(xmlDoc);
 
-      // Try to get notes
+      // Extract notes
       const notesFile = `ppt/notesSlides/notesSlide${index + 1}.xml`;
       let notes: string[] = [];
       if (zipContent.files[notesFile]) {
@@ -97,7 +141,7 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
             if (node.name === 'a:t' && node.content) {
               const text = Array.isArray(node.content) 
                 ? node.content.join('').trim()
-                : node.content.trim();
+                : String(node.content).trim();
               if (text) notes.push(text);
             }
             if (node.children) {
@@ -108,10 +152,13 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
         }
       }
 
+      // Remove title from content if it exists
+      const contentWithoutTitle = textContents.filter(text => text !== title);
+
       processedContent.slides.push({
         index: index + 1,
         title,
-        content,
+        content: contentWithoutTitle,
         notes,
         shapes
       });
