@@ -25,7 +25,14 @@ export const FileUpload = ({ userId, onUploadComplete }: FileUploadProps) => {
         onChange={handleFileUpload}
         disabled={uploading}
       />
-      {uploading && <Progress value={progress} className="mt-2" />}
+      {uploading && (
+        <div className="mt-2">
+          <Progress value={progress} className="mb-2" />
+          <p className="text-sm text-gray-500">
+            {progress < 100 ? 'Uploading...' : 'Processing...'} {progress}%
+          </p>
+        </div>
+      )}
     </div>
   );
 };

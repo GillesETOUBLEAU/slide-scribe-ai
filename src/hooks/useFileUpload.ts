@@ -18,11 +18,17 @@ export const useFileUpload = (userId: string, onUploadComplete: () => void) => {
       console.log("Starting file upload process");
       const pptxPath = `${userId}/${crypto.randomUUID()}-${file.name}`;
       
-      // Upload file to storage
+      // Upload file to storage with progress tracking
       console.log("Uploading file to storage");
       const { error: uploadError } = await supabase.storage
         .from("pptx_files")
-        .upload(pptxPath, file);
+        .upload(pptxPath, file, {
+          onUploadProgress: (progress) => {
+            const percentage = (progress.loaded / progress.total) * 100;
+            setProgress(Math.round(percentage));
+          },
+          cacheControl: '3600'
+        });
 
       if (uploadError) throw uploadError;
 
@@ -41,10 +47,18 @@ export const useFileUpload = (userId: string, onUploadComplete: () => void) => {
 
       if (dbError) throw dbError;
 
-      // Trigger processing
+      // Get file URL for processing
+      const { data: { publicUrl } } = supabase.storage
+        .from("pptx_files")
+        .getPublicUrl(pptxPath);
+
+      // Trigger processing with file URL instead of raw file
       console.log("Triggering processing function", fileData.id);
       const { data: processData, error: processError } = await supabase.functions.invoke('process-pptx', {
-        body: { fileId: fileData.id }
+        body: { 
+          fileId: fileData.id,
+          fileUrl: publicUrl
+        }
       });
 
       if (processError) {
@@ -52,12 +66,12 @@ export const useFileUpload = (userId: string, onUploadComplete: () => void) => {
         toast({
           variant: "destructive",
           title: "Processing failed",
-          description: "The file could not be processed. Please try again with a smaller file.",
+          description: "The file could not be processed. Please try again.",
         });
         return;
       }
 
-      if (processData.status === 'error') {
+      if (processData?.status === 'error') {
         toast({
           variant: "destructive",
           title: "Processing failed",
