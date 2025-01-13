@@ -27,7 +27,9 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
     const presentationFile = zipContent.files['ppt/presentation.xml'];
     if (presentationFile) {
       const presentationContent = await presentationFile.async('string');
-      console.log("Presentation XML content:", presentationContent.substring(0, 500));
+      console.log("Processing presentation.xml");
+      const presentationDoc = parseXMLContent(presentationContent);
+      // Extract any global metadata if needed
     }
 
     const slideFiles = Object.keys(zipContent.files)
@@ -43,24 +45,22 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
 
     for (const slideFile of slideFiles) {
       try {
+        console.log(`Processing ${slideFile}`);
         const slideContent = await zipContent.files[slideFile].async('string');
-        console.log(`Processing ${slideFile}, content length: ${slideContent.length}`);
-        
         const xmlDoc = parseXMLContent(slideContent);
-        console.log("Parsed XML structure:", JSON.stringify(xmlDoc, null, 2).substring(0, 500));
         
         const slideIndex = parseInt(slideFile.match(/slide([0-9]+)\.xml/)?.[1] || '0');
         
-        // Extract all text content first
-        const allTexts = extractTextContent(xmlDoc);
-        console.log(`Found ${allTexts.length} text elements in slide ${slideIndex}`);
-        
-        // Process slide title
-        let title = findTitle(xmlDoc) || `Slide ${slideIndex}`;
+        // Extract title and content
+        const title = findTitle(xmlDoc) || `Slide ${slideIndex}`;
         console.log(`Slide ${slideIndex} title:`, title);
         
-        // Filter content to remove title
-        const content = allTexts.filter(text => text !== title);
+        // Extract all text content
+        const allContent = extractTextContent(xmlDoc);
+        console.log(`Found ${allContent.length} text elements in slide ${slideIndex}`);
+        
+        // Filter out title from content
+        const content = allContent.filter(text => text !== title && text.trim() !== '');
         console.log(`Slide ${slideIndex} content:`, content);
         
         // Extract shapes

@@ -12,21 +12,21 @@ export function extractTextContent(node: any): string[] {
   const textContents: string[] = [];
   
   function walkNode(n: any) {
-    // Handle PowerPoint specific text containers
-    if (n.name === 'p:txBody' || n.name === 'a:p') {
-      const texts = extractParagraphText(n);
-      textContents.push(...texts);
+    // Handle text content directly
+    if (n.type === 'text' && n.content) {
+      const text = n.content.toString().trim();
+      if (text) textContents.push(text);
       return;
     }
     
-    // Process shapes and other text containers
-    if (n.name === 'p:sp' || n.name === 'p:graphicFrame') {
-      // Look for text body within shapes
-      const txBody = findNode(n, 'p:txBody');
-      if (txBody) {
-        const texts = extractParagraphText(txBody);
-        textContents.push(...texts);
-      }
+    // Handle PowerPoint specific text containers
+    if (n.name === 'a:t') {
+      const text = n.children?.map((child: any) => 
+        child.type === 'text' ? child.content.toString() : ''
+      ).join('').trim();
+      
+      if (text) textContents.push(text);
+      return;
     }
     
     // Recursively process children
@@ -37,38 +37,6 @@ export function extractTextContent(node: any): string[] {
   
   walkNode(node);
   return textContents.filter(text => text.trim() !== '');
-}
-
-function extractParagraphText(node: any): string[] {
-  const texts: string[] = [];
-  
-  function walkTextNode(n: any) {
-    // Handle direct text content
-    if (n.type === 'text') {
-      const text = n.content?.toString().trim();
-      if (text) texts.push(text);
-      return;
-    }
-    
-    // Handle PowerPoint text run elements
-    if (n.name === 'a:r') {
-      const textElement = findNode(n, 'a:t');
-      if (textElement?.content) {
-        const text = Array.isArray(textElement.content) 
-          ? textElement.content.join('').trim()
-          : textElement.content.toString().trim();
-        if (text) texts.push(text);
-      }
-    }
-    
-    // Recursively process children
-    if (Array.isArray(n.children)) {
-      n.children.forEach(walkTextNode);
-    }
-  }
-  
-  walkTextNode(node);
-  return texts;
 }
 
 export function findNode(node: any, nodeName: string): any {
