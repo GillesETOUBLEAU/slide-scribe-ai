@@ -1,9 +1,132 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1'
+import * as XLSX from 'https://esm.sh/xlsx@0.18.5'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+async function extractPPTXContent(arrayBuffer: ArrayBuffer, filename: string) {
+  try {
+    // Read the PPTX file
+    const workbook = XLSX.read(arrayBuffer, {
+      cellStyles: true,
+      cellFormulas: true,
+      cellDates: true,
+      cellNF: true,
+      sheetStubs: true
+    });
+
+    // Initialize the structured content
+    const structuredContent = {
+      metadata: {
+        filename: filename,
+        processedAt: new Date().toISOString(),
+      },
+      slides: [] as any[]
+    };
+
+    // Process each sheet (slide)
+    workbook.SheetNames.forEach((sheetName, index) => {
+      const sheet = workbook.Sheets[sheetName];
+      const slideContent = {
+        index: index + 1,
+        title: extractSlideTitle(sheet),
+        content: [],
+        notes: extractNotes(sheet),
+        shapes: extractShapes(sheet)
+      };
+
+      // Extract text content
+      const textContent = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+        .flat()
+        .filter(cell => cell && typeof cell === 'string');
+
+      slideContent.content = textContent;
+      structuredContent.slides.push(slideContent);
+    });
+
+    return {
+      json: structuredContent,
+      markdown: convertToMarkdown(structuredContent)
+    };
+  } catch (error) {
+    console.error('Error processing PPTX:', error);
+    throw error;
+  }
+}
+
+function extractSlideTitle(sheet: XLSX.WorkSheet): string {
+  // Attempt to find title in common locations
+  const titleCells = ['A1', 'B1', 'C1'];
+  for (const cell of titleCells) {
+    if (sheet[cell] && sheet[cell].v) {
+      return sheet[cell].v.toString();
+    }
+  }
+  return 'Untitled Slide';
+}
+
+function extractNotes(sheet: XLSX.WorkSheet): string[] {
+  // Look for notes in the sheet's comments or specific cells
+  const notes: string[] = [];
+  if (sheet['!comments']) {
+    Object.values(sheet['!comments']).forEach(comment => {
+      if (comment.t) notes.push(comment.t);
+    });
+  }
+  return notes;
+}
+
+function extractShapes(sheet: XLSX.WorkSheet): Array<{ type: string; text: string }> {
+  // Extract shape data if available
+  const shapes: Array<{ type: string; text: string }> = [];
+  if (sheet['!drawings']) {
+    sheet['!drawings'].forEach((drawing: any) => {
+      if (drawing.shape) {
+        shapes.push({
+          type: drawing.shape.type,
+          text: drawing.shape.text || ''
+        });
+      }
+    });
+  }
+  return shapes;
+}
+
+function convertToMarkdown(structuredContent: any): string {
+  let markdown = `# ${structuredContent.metadata.filename}\n\n`;
+
+  structuredContent.slides.forEach((slide: any) => {
+    markdown += `## Slide ${slide.index}: ${slide.title}\n\n`;
+
+    // Add content
+    slide.content.forEach((text: string) => {
+      if (text.trim()) {
+        markdown += `${text}\n\n`;
+      }
+    });
+
+    // Add notes if present
+    if (slide.notes.length > 0) {
+      markdown += '### Notes\n\n';
+      slide.notes.forEach((note: string) => {
+        markdown += `> ${note}\n\n`;
+      });
+    }
+
+    // Add shapes if present
+    if (slide.shapes.length > 0) {
+      markdown += '### Shapes\n\n';
+      slide.shapes.forEach((shape: { type: string; text: string }) => {
+        markdown += `- ${shape.type}: ${shape.text}\n`;
+      });
+      markdown += '\n';
+    }
+  });
+
+  return markdown;
 }
 
 serve(async (req) => {
@@ -35,7 +158,7 @@ serve(async (req) => {
     
     console.log('File data retrieved:', fileData);
 
-    // Download the PPTX file directly from storage
+    // Download the PPTX file
     const { data: fileContent, error: downloadError } = await supabase.storage
       .from('pptx_files')
       .download(fileData.pptx_path);
@@ -51,31 +174,9 @@ serve(async (req) => {
 
     console.log('File downloaded successfully, size:', fileContent.size);
 
-    // For now, create placeholder content (since we can't process PPTX directly)
-    const processedContent = {
-      metadata: {
-        filename: fileData.original_filename,
-        processedAt: new Date().toISOString(),
-        fileSize: fileContent.size
-      },
-      slides: [
-        {
-          index: 1,
-          title: "Processed Slide",
-          content: "This is a placeholder for the processed PPTX content."
-        }
-      ]
-    };
-
-    // Generate markdown content
-    const markdownContent = `# ${fileData.original_filename}
-
-Processed at: ${new Date().toISOString()}
-File size: ${fileContent.size} bytes
-
-## Slide 1
-
-This is a placeholder for the processed PPTX content.`;
+    // Process the PPTX content
+    const arrayBuffer = await fileContent.arrayBuffer();
+    const { json, markdown } = await extractPPTXContent(arrayBuffer, fileData.original_filename);
 
     // Generate paths for processed files
     const jsonPath = fileData.pptx_path.replace('.pptx', '.json');
@@ -87,13 +188,13 @@ This is a placeholder for the processed PPTX content.`;
     const [jsonUpload, markdownUpload] = await Promise.all([
       supabase.storage
         .from('pptx_files')
-        .upload(jsonPath, JSON.stringify(processedContent), {
+        .upload(jsonPath, JSON.stringify(json), {
           contentType: 'application/json',
           upsert: true
         }),
       supabase.storage
         .from('pptx_files')
-        .upload(markdownPath, markdownContent, {
+        .upload(markdownPath, markdown, {
           contentType: 'text/markdown',
           upsert: true
         })
