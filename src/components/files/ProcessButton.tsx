@@ -29,14 +29,11 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
 
       console.log("Invoking process-pptx function with payload:", { fileId: id, filePath: pptx_path });
 
-      // Call the edge function to process the file with explicit timeout
+      // Call the edge function to process the file
       const { data, error } = await supabase.functions.invoke('process-pptx', {
         body: { 
           fileId: id,
           filePath: pptx_path
-        },
-        headers: {
-          'Content-Type': 'application/json',
         }
       });
 
