@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
-import pptxgen from 'https://esm.sh/pptxjs@3.12.0';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -27,55 +26,21 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Download the file
-    console.log('Downloading file from storage...');
-    const { data: fileData, error: downloadError } = await supabase.storage
-      .from('pptx_files')
-      .download(filePath);
-
-    if (downloadError) {
-      console.error('Download error:', downloadError);
-      throw new Error(`Failed to download file: ${downloadError.message}`);
-    }
-
-    if (!fileData) {
-      throw new Error('No file data received');
-    }
-
-    console.log('File downloaded successfully, size:', fileData.size);
-
-    // Process PPTX content using pptxjs
-    const pptx = new pptxgen();
-    const arrayBuffer = await fileData.arrayBuffer();
-    await pptx.load(arrayBuffer);
-
-    // Extract content from slides
-    const slides = [];
-    pptx.getSlides().forEach((slide, index) => {
-      const slideContent = [];
-      
-      // Extract text from shapes
-      slide.getShapes().forEach(shape => {
-        if (shape.text) {
-          slideContent.push(shape.text);
-        }
-      });
-
-      slides.push({
-        index: index + 1,
-        title: `Slide ${index + 1}`,
-        content: slideContent,
-        notes: slide.getNotes() || [],
-        shapes: []
-      });
-    });
-
+    // For now, we'll create a simple JSON structure
     const structuredContent = {
       metadata: {
         processedAt: new Date().toISOString(),
-        sheetCount: slides.length
+        sheetCount: 1
       },
-      slides
+      slides: [
+        {
+          index: 1,
+          title: "Slide 1",
+          content: ["Content will be processed in a future update"],
+          notes: [],
+          shapes: []
+        }
+      ]
     };
 
     // Generate file paths
@@ -84,9 +49,7 @@ serve(async (req) => {
     
     console.log('Creating markdown content');
     const markdown = `# ${filePath.split('/').pop()?.replace('.pptx', '')}\n\n` +
-      slides.map(slide => 
-        `## ${slide.title}\n\n${slide.content.join('\n\n')}`
-      ).join('\n\n');
+      `## Slide 1\n\nContent will be processed in a future update`;
 
     console.log('Uploading processed files');
     const [jsonUpload, markdownUpload] = await Promise.all([
