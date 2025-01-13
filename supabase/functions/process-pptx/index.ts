@@ -16,14 +16,14 @@ serve(async (req) => {
 
   try {
     const { fileId } = await req.json()
-    console.log('Processing file:', fileId)
+    console.log('Starting processing for file:', fileId)
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Get file conversion record
+    console.log('Fetching file data from database')
     const { data: fileData, error: fileError } = await supabase
       .from('file_conversions')
       .select('*')
@@ -35,7 +35,7 @@ serve(async (req) => {
       throw fileError
     }
 
-    // Download PPTX file
+    console.log('Downloading PPTX file:', fileData.pptx_path)
     const { data: fileContent, error: downloadError } = await supabase
       .storage
       .from('pptx_files')
@@ -46,17 +46,17 @@ serve(async (req) => {
       throw downloadError
     }
 
-    // Process PPTX content
+    console.log('Processing PPTX content')
     const result = await extractPPTXContent(fileContent)
     console.log('File processed successfully')
 
-    // Upload JSON and Markdown files
     const jsonPath = fileData.pptx_path.replace('.pptx', '.json')
     const markdownPath = fileData.pptx_path.replace('.pptx', '.md')
 
     const jsonBlob = new Blob([JSON.stringify(result.json, null, 2)], { type: 'application/json' })
     const markdownBlob = new Blob([result.markdown], { type: 'text/markdown' })
 
+    console.log('Uploading JSON file')
     const { error: jsonUploadError } = await supabase
       .storage
       .from('pptx_files')
@@ -67,6 +67,7 @@ serve(async (req) => {
       throw jsonUploadError
     }
 
+    console.log('Uploading Markdown file')
     const { error: markdownUploadError } = await supabase
       .storage
       .from('pptx_files')
@@ -77,7 +78,7 @@ serve(async (req) => {
       throw markdownUploadError
     }
 
-    // Update file conversion record
+    console.log('Updating file conversion record')
     const { error: updateError } = await supabase
       .from('file_conversions')
       .update({
@@ -92,6 +93,7 @@ serve(async (req) => {
       throw updateError
     }
 
+    console.log('Processing completed successfully')
     return new Response(
       JSON.stringify({ success: true }),
       { 
@@ -102,7 +104,7 @@ serve(async (req) => {
       }
     )
   } catch (error) {
-    console.error('Error:', error)
+    console.error('Processing error:', error)
     return new Response(
       JSON.stringify({ error: error.message }),
       { 

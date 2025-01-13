@@ -29,13 +29,19 @@ export const FileUpload = ({ userId, onUploadComplete }: FileUploadProps) => {
     setProgress(0);
 
     try {
+      console.log("Starting file upload process");
       const pptxPath = `${userId}/${crypto.randomUUID()}-${file.name}`;
+      
+      // Upload file to storage
+      console.log("Uploading file to storage");
       const { error: uploadError } = await supabase.storage
         .from("pptx_files")
         .upload(pptxPath, file);
 
       if (uploadError) throw uploadError;
 
+      // Create database record
+      console.log("Creating database record");
       const { data: fileData, error: dbError } = await supabase
         .from("file_conversions")
         .insert({
@@ -50,11 +56,17 @@ export const FileUpload = ({ userId, onUploadComplete }: FileUploadProps) => {
       if (dbError) throw dbError;
 
       // Trigger processing
-      const { error: processError } = await supabase.functions.invoke('process-pptx', {
+      console.log("Triggering processing function", fileData.id);
+      const { data: processData, error: processError } = await supabase.functions.invoke('process-pptx', {
         body: { fileId: fileData.id }
       });
 
-      if (processError) throw processError;
+      if (processError) {
+        console.error("Processing error:", processError);
+        throw processError;
+      }
+
+      console.log("Processing response:", processData);
 
       toast({
         title: "File uploaded successfully",
@@ -63,6 +75,7 @@ export const FileUpload = ({ userId, onUploadComplete }: FileUploadProps) => {
 
       onUploadComplete();
     } catch (error) {
+      console.error("Upload error:", error);
       toast({
         variant: "destructive",
         title: "Upload failed",
