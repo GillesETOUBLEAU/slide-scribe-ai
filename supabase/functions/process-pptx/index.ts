@@ -27,31 +27,13 @@ serve(async (req) => {
       throw new Error('Missing required environment variables');
     }
 
-    // Download the file
-    const downloadResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/authenticated/${filePath}`,
-      {
-        headers: {
-          Authorization: `Bearer ${supabaseKey}`,
-          apikey: supabaseKey,
-        },
-      }
-    );
-
-    if (!downloadResponse.ok) {
-      throw new Error(`Failed to download file: ${downloadResponse.statusText}`);
-    }
-
-    const fileContent = await downloadResponse.blob();
-    console.log("File downloaded successfully");
-
-    // Process the file (simplified for now)
+    // Create simple JSON and Markdown content
     const processedContent = {
       metadata: {
         processedAt: new Date().toISOString(),
         filePath
       },
-      content: ['Processed content placeholder']
+      content: ['Processed content will be added here']
     };
 
     // Generate file paths
@@ -61,7 +43,7 @@ serve(async (req) => {
     // Upload JSON file
     const jsonBlob = new Blob([JSON.stringify(processedContent)], { type: 'application/json' });
     const jsonUploadResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/${jsonPath}`,
+      `${supabaseUrl}/storage/v1/object/pptx_files/${jsonPath}`,
       {
         method: 'POST',
         headers: {
@@ -80,7 +62,7 @@ serve(async (req) => {
     const markdownContent = `# Processed File\n\nProcessed at: ${processedContent.metadata.processedAt}\n\n${processedContent.content.join('\n')}`;
     const markdownBlob = new Blob([markdownContent], { type: 'text/markdown' });
     const markdownUploadResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/${markdownPath}`,
+      `${supabaseUrl}/storage/v1/object/pptx_files/${markdownPath}`,
       {
         method: 'POST',
         headers: {
