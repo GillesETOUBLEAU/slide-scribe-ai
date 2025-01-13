@@ -27,7 +27,7 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
         throw updateError;
       }
 
-      // Prepare payload with proper typing
+      // Prepare payload
       const payload = {
         fileId: id,
         filePath: pptx_path
@@ -36,7 +36,7 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
       console.log("Invoking process-pptx function with payload:", payload);
 
       const { data, error } = await supabase.functions.invoke('process-pptx', {
-        body: JSON.stringify(payload),
+        body: payload,
         headers: {
           'Content-Type': 'application/json',
         }

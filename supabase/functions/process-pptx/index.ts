@@ -28,25 +28,27 @@ serve(async (req) => {
     // Parse and validate request body
     let payload;
     try {
-      const body = await req.text();
-      console.log("Raw request body:", body);
-      payload = JSON.parse(body);
-      console.log("Parsed payload:", payload);
+      const body = await req.json();
+      console.log("Request body:", body);
+      
+      // Validate required fields
+      if (!body.fileId || !body.filePath) {
+        throw new Error("Missing required fields: fileId and filePath");
+      }
+      
+      payload = {
+        fileId: body.fileId,
+        filePath: body.filePath
+      };
+      
+      console.log("Validated payload:", payload);
     } catch (e) {
-      console.error("Error parsing request body:", e);
-      throw new Error("Invalid JSON payload");
+      console.error("Error parsing/validating request body:", e);
+      throw new Error(`Invalid or malformed JSON payload: ${e.message}`);
     }
-
-    // Validate required fields
-    const { fileId, filePath } = payload;
-    if (!fileId || !filePath) {
-      throw new Error("Missing required fields: fileId and filePath");
-    }
-
-    console.log("Processing file:", { fileId, filePath });
 
     // Process the file
-    const result = await handleFileProcessing(fileId, filePath);
+    const result = await handleFileProcessing(payload.fileId, payload.filePath);
 
     // Return success response with CORS headers
     return new Response(
