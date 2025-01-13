@@ -15,37 +15,51 @@ export const useFileUpload = (userId: string, onUploadComplete: () => void) => {
     setProgress(0);
 
     try {
-      console.log("Starting file upload process");
+      console.log("Starting file upload process for:", file.name);
       const pptxPath = `${userId}/${crypto.randomUUID()}-${file.name}`;
       
       // Upload file to storage with progress tracking
-      console.log("Uploading file to storage");
-      const { error: uploadError } = await supabase.storage
+      console.log("Uploading file to storage at path:", pptxPath);
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from("pptx_files")
         .upload(pptxPath, file, {
-          cacheControl: '3600'
+          cacheControl: '3600',
+          upsert: true
         });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error("Storage upload error:", uploadError);
+        throw uploadError;
+      }
 
-      // Create database record with explicit status
+      console.log("File uploaded successfully:", uploadData);
+
+      // Create database record
       console.log("Creating database record");
-      const { error: dbError } = await supabase
+      const { data: dbData, error: dbError } = await supabase
         .from("file_conversions")
         .insert({
           user_id: userId,
           original_filename: file.name,
           pptx_path: pptxPath,
           status: 'uploaded'
-        });
+        })
+        .select()
+        .single();
 
-      if (dbError) throw dbError;
+      if (dbError) {
+        console.error("Database insert error:", dbError);
+        throw dbError;
+      }
+
+      console.log("Database record created:", dbData);
 
       toast({
         title: "File uploaded",
         description: "Your file has been uploaded. Click 'Process' to start processing.",
       });
 
+      setProgress(100);
       onUploadComplete();
     } catch (error) {
       console.error("Upload error:", error);

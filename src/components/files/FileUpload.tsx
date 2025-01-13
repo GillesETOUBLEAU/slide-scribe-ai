@@ -1,6 +1,8 @@
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { useFileUpload } from "@/hooks/useFileUpload";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2 } from "lucide-react";
 
 interface FileUploadProps {
   userId: string;
@@ -18,19 +20,23 @@ export const FileUpload = ({ userId, onUploadComplete }: FileUploadProps) => {
   };
 
   return (
-    <div className="mb-8">
+    <div className="mb-8 space-y-4">
       <Input
         type="file"
         accept=".pptx"
         onChange={handleFileUpload}
         disabled={uploading}
+        className="cursor-pointer"
       />
       {uploading && (
-        <div className="mt-2">
-          <Progress value={progress} className="mb-2" />
-          <p className="text-sm text-gray-500">
-            {progress < 100 ? 'Uploading...' : 'Processing...'} {progress}%
-          </p>
+        <div className="space-y-2">
+          <Progress value={progress} className="h-2" />
+          <Alert>
+            <AlertDescription className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {progress < 100 ? 'Uploading...' : 'Processing...'} {progress}%
+            </AlertDescription>
+          </Alert>
         </div>
       )}
     </div>
