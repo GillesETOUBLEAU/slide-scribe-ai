@@ -16,7 +16,9 @@ serve(async (req) => {
   }
 
   try {
-    const { fileId, filePath } = await req.json();
+    // Parse request body once and store it
+    const requestData = await req.json();
+    const { fileId, filePath } = requestData;
     console.log("Processing file:", { fileId, filePath });
 
     if (!fileId || !filePath) {
@@ -29,6 +31,28 @@ serve(async (req) => {
 
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Missing required environment variables');
+    }
+
+    // Update status to processing first
+    console.log("Updating status to processing");
+    const updateResponse = await fetch(
+      `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${supabaseKey}`,
+          apikey: supabaseKey,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          status: 'processing'
+        }),
+      }
+    );
+
+    if (!updateResponse.ok) {
+      throw new Error(`Failed to update status to processing: ${updateResponse.statusText}`);
     }
 
     // Download the PPTX file
@@ -65,7 +89,7 @@ serve(async (req) => {
     });
     
     const jsonUploadResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/public/pptx_files/${jsonPath}`,
+      `${supabaseUrl}/storage/v1/object/pptx_files/${jsonPath}`,
       {
         method: 'POST',
         headers: {
@@ -96,7 +120,7 @@ serve(async (req) => {
     const markdownBlob = new Blob([markdownContent], { type: 'text/markdown' });
     
     const markdownUploadResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/public/pptx_files/${markdownPath}`,
+      `${supabaseUrl}/storage/v1/object/pptx_files/${markdownPath}`,
       {
         method: 'POST',
         headers: {
@@ -113,7 +137,7 @@ serve(async (req) => {
 
     // Update file status in database
     console.log("Updating file status in database");
-    const updateResponse = await fetch(
+    const finalUpdateResponse = await fetch(
       `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
       {
         method: 'PATCH',
@@ -131,8 +155,8 @@ serve(async (req) => {
       }
     );
 
-    if (!updateResponse.ok) {
-      throw new Error(`Failed to update file status: ${updateResponse.statusText}`);
+    if (!finalUpdateResponse.ok) {
+      throw new Error(`Failed to update file status: ${finalUpdateResponse.statusText}`);
     }
 
     console.log("Processing completed successfully");
@@ -150,31 +174,29 @@ serve(async (req) => {
   } catch (error) {
     console.error('Processing error:', error);
 
-    // If we have a fileId, update the status to error
+    // Update the file status to error
     try {
-      if (req.json && (await req.json()).fileId) {
-        const { fileId } = await req.json();
-        const supabaseUrl = Deno.env.get('SUPABASE_URL');
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      const { fileId } = await req.json();
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-        if (supabaseUrl && supabaseKey) {
-          await fetch(
-            `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
-            {
-              method: 'PATCH',
-              headers: {
-                Authorization: `Bearer ${supabaseKey}`,
-                apikey: supabaseKey,
-                'Content-Type': 'application/json',
-                Prefer: 'return=minimal',
-              },
-              body: JSON.stringify({
-                status: 'error',
-                error_message: error instanceof Error ? error.message : "Unknown error occurred",
-              }),
-            }
-          );
-        }
+      if (fileId && supabaseUrl && supabaseKey) {
+        await fetch(
+          `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${supabaseKey}`,
+              apikey: supabaseKey,
+              'Content-Type': 'application/json',
+              Prefer: 'return=minimal',
+            },
+            body: JSON.stringify({
+              status: 'error',
+              error_message: error instanceof Error ? error.message : "Unknown error occurred",
+            }),
+          }
+        );
       }
     } catch (updateError) {
       console.error('Error updating file status:', updateError);
