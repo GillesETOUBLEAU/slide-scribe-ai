@@ -25,6 +25,17 @@ export const FileUpload = ({ userId, onUploadComplete }: FileUploadProps) => {
       return;
     }
 
+    // Check file size before uploading
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+    if (file.size > MAX_FILE_SIZE) {
+      toast({
+        variant: "destructive",
+        title: "File too large",
+        description: "Maximum file size is 5MB",
+      });
+      return;
+    }
+
     setUploading(true);
     setProgress(0);
 
@@ -63,19 +74,26 @@ export const FileUpload = ({ userId, onUploadComplete }: FileUploadProps) => {
 
       if (processError) {
         console.error("Processing error:", processError);
-        throw processError;
+        toast({
+          variant: "destructive",
+          title: "Processing failed",
+          description: "The file could not be processed. Please try again with a smaller file.",
+        });
+        return;
       }
 
-      console.log("Processing response:", processData);
-
-      if (!processData.success) {
-        throw new Error(processData.error || 'Processing failed');
+      if (processData.status === 'error') {
+        toast({
+          variant: "destructive",
+          title: "Processing failed",
+          description: processData.details || "An error occurred while processing the file.",
+        });
+      } else {
+        toast({
+          title: "File uploaded",
+          description: "Your file has been uploaded and is being processed.",
+        });
       }
-
-      toast({
-        title: "File uploaded successfully",
-        description: "Your file is being processed. You'll see the results shortly.",
-      });
 
       onUploadComplete();
     } catch (error) {
