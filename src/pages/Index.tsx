@@ -62,9 +62,6 @@ const Index = () => {
         setFiles([]);
       } else if (event === "USER_UPDATED") {
         setSession(session);
-      } else if (event === "USER_DELETED") {
-        setSession(null);
-        setFiles([]);
       } else if (event === "PASSWORD_RECOVERY") {
         // Handle password recovery if needed
       }
@@ -72,12 +69,6 @@ const Index = () => {
 
     return () => subscription.unsubscribe();
   }, []);
-
-  useEffect(() => {
-    if (session) {
-      fetchFiles();
-    }
-  }, [session]);
 
   const fetchFiles = async () => {
     const { data, error } = await supabase
