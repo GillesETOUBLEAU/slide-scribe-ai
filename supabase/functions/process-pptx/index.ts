@@ -28,8 +28,16 @@ serve(async (req) => {
     // Parse and validate request body
     let payload;
     try {
-      const body = await req.json();
-      console.log("Request body:", body);
+      // Ensure we have a body to parse
+      const bodyText = await req.text();
+      console.log("Raw request body:", bodyText);
+      
+      if (!bodyText) {
+        throw new Error("Request body is empty");
+      }
+      
+      const body = JSON.parse(bodyText);
+      console.log("Parsed request body:", body);
       
       // Validate required fields
       if (!body.fileId || !body.filePath) {
