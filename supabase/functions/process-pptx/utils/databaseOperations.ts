@@ -2,7 +2,7 @@ export async function updateFileStatus(
   supabaseUrl: string,
   supabaseKey: string,
   fileId: string,
-  status: 'processing' | 'completed' | 'error',
+  status: 'completed' | 'error',
   paths?: { jsonPath?: string; markdownPath?: string },
   errorMessage?: string
 ) {

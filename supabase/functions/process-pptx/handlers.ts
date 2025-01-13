@@ -1,6 +1,9 @@
 import JSZip from "https://esm.sh/jszip@3.10.1";
 import { parse as parseXML } from "https://deno.land/x/xml@2.1.3/mod.ts";
 import type { FileData } from "./types.ts";
+import { downloadFile, uploadProcessedFiles } from "./utils/fileOperations.ts";
+import { updateFileStatus } from "./utils/databaseOperations.ts";
+import { generateMarkdown } from "./utils/markdownGenerator.ts";
 
 export async function handleFileProcessing(fileId: string, filePath: string) {
   console.log(`Starting processing for file: ${fileId}`);
@@ -9,116 +12,39 @@ export async function handleFileProcessing(fileId: string, filePath: string) {
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   
   try {
-    // Download the PPTX file using REST API
-    const storageResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/authenticated/pptx_files/${filePath}`,
-      {
-        headers: {
-          Authorization: `Bearer ${supabaseKey}`,
-          apikey: supabaseKey,
-        },
-      }
-    );
-
-    if (!storageResponse.ok) {
-      throw new Error(`Failed to download file: ${storageResponse.statusText}`);
-    }
-
-    const fileData = await storageResponse.arrayBuffer();
-    
-    // Process the file
+    // Download and process the file
+    const fileData = await downloadFile(supabaseUrl, supabaseKey, filePath);
     const processedData = await processFile(fileData);
     
-    // Save JSON output
-    const jsonPath = filePath.replace('.pptx', '.json');
-    const jsonBlob = new Blob([JSON.stringify(processedData, null, 2)], {
-      type: 'application/json',
-    });
-    
-    const jsonUploadResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/pptx_files/${jsonPath}`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${supabaseKey}`,
-          apikey: supabaseKey,
-          'Content-Type': 'application/json',
-        },
-        body: jsonBlob,
-      }
-    );
-
-    if (!jsonUploadResponse.ok) {
-      throw new Error(`Failed to upload JSON: ${jsonUploadResponse.statusText}`);
-    }
-
-    // Generate and save markdown
+    // Generate markdown
     const markdown = generateMarkdown(processedData);
-    const markdownPath = filePath.replace('.pptx', '.md');
-    const markdownBlob = new Blob([markdown], { type: 'text/markdown' });
     
-    const markdownUploadResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/pptx_files/${markdownPath}`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${supabaseKey}`,
-          apikey: supabaseKey,
-          'Content-Type': 'text/markdown',
-        },
-        body: markdownBlob,
-      }
+    // Upload processed files
+    const { jsonPath, markdownPath } = await uploadProcessedFiles(
+      supabaseUrl,
+      supabaseKey,
+      filePath,
+      processedData,
+      markdown
     );
-
-    if (!markdownUploadResponse.ok) {
-      throw new Error(`Failed to upload Markdown: ${markdownUploadResponse.statusText}`);
-    }
 
     // Update database record
-    const updateResponse = await fetch(
-      `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
-      {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${supabaseKey}`,
-          apikey: supabaseKey,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({
-          status: 'completed',
-          json_path: jsonPath,
-          markdown_path: markdownPath,
-        }),
-      }
-    );
-
-    if (!updateResponse.ok) {
-      throw new Error(`Failed to update record: ${updateResponse.statusText}`);
-    }
+    await updateFileStatus(supabaseUrl, supabaseKey, fileId, 'completed', {
+      jsonPath,
+      markdownPath
+    });
 
     return { success: true };
   } catch (error) {
     console.error('Error processing file:', error);
-
-    // Update database record with error
-    await fetch(
-      `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
-      {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${supabaseKey}`,
-          apikey: supabaseKey,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({
-          status: 'error',
-          error_message: error instanceof Error ? error.message : 'Unknown error occurred',
-        }),
-      }
+    await updateFileStatus(
+      supabaseUrl,
+      supabaseKey,
+      fileId,
+      'error',
+      undefined,
+      error instanceof Error ? error.message : 'Unknown error occurred'
     );
-
     throw error;
   }
 }
@@ -224,38 +150,4 @@ function extractTextFromNode(node: any): string {
       .trim();
   }
   return '';
-}
-
-function generateMarkdown(content: FileData): string {
-  let markdown = `# Presentation Content\n\n`;
-  markdown += `Processed at: ${content.metadata.processedAt}\n\n`;
-
-  content.slides.forEach((slide) => {
-    markdown += `## Slide ${slide.index}: ${slide.title}\n\n`;
-    
-    // Add content
-    slide.content.forEach((text) => {
-      markdown += `${text}\n\n`;
-    });
-
-    // Add notes if present
-    if (slide.notes.length > 0) {
-      markdown += `### Notes\n\n`;
-      slide.notes.forEach((note) => {
-        markdown += `- ${note}\n`;
-      });
-      markdown += '\n';
-    }
-
-    // Add shapes if present
-    if (slide.shapes.length > 0) {
-      markdown += `### Shapes\n\n`;
-      slide.shapes.forEach((shape) => {
-        markdown += `- ${shape.type}: ${shape.text}\n`;
-      });
-      markdown += '\n';
-    }
-  });
-
-  return markdown;
 }
