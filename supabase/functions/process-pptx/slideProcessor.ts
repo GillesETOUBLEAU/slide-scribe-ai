@@ -1,15 +1,15 @@
 import { FileData } from "./types.ts";
-import { unzip } from "https://deno.land/x/zip@v1.2.5/mod.ts";
+import JSZip from "https://esm.sh/jszip@3.10.1";
 import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
 
 export async function processSlideContent(fileData: Blob): Promise<FileData> {
   try {
     console.log("Starting PPTX processing");
     const arrayBuffer = await fileData.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
     
-    // Unzip the PPTX file
-    const unzipped = await unzip(uint8Array);
+    // Create a new JSZip instance and load the file
+    const zip = new JSZip();
+    const zipContent = await zip.loadAsync(arrayBuffer);
     console.log("PPTX file unzipped successfully");
 
     const processedContent: FileData = {
@@ -21,17 +21,19 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
       slides: []
     };
 
-    const parser = new DOMParser();
-    const slideFiles = Object.keys(unzipped).filter(name => 
-      name.startsWith('ppt/slides/slide') && name.endsWith('.xml')
-    ).sort();
+    // Find all slide XML files
+    const slideFiles = Object.keys(zipContent.files)
+      .filter(name => name.startsWith('ppt/slides/slide') && name.endsWith('.xml'))
+      .sort();
 
     console.log(`Found ${slideFiles.length} slides`);
     processedContent.metadata.slideCount = slideFiles.length;
 
+    // Process each slide
     for (const [index, slideFile] of slideFiles.entries()) {
       console.log(`Processing slide ${index + 1}: ${slideFile}`);
-      const slideContent = new TextDecoder().decode(unzipped[slideFile]);
+      const slideContent = await zipContent.files[slideFile].async('string');
+      const parser = new DOMParser();
       const doc = parser.parseFromString(slideContent, 'text/xml');
       
       if (!doc) {
@@ -62,8 +64,8 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
       // Try to get notes
       const notesFile = `ppt/notesSlides/notesSlide${index + 1}.xml`;
       let notes: string[] = [];
-      if (unzipped[notesFile]) {
-        const notesContent = new TextDecoder().decode(unzipped[notesFile]);
+      if (zipContent.files[notesFile]) {
+        const notesContent = await zipContent.files[notesFile].async('string');
         const notesDoc = parser.parseFromString(notesContent, 'text/xml');
         if (notesDoc) {
           const noteElements = notesDoc.querySelectorAll('a\\:t');
