@@ -32,7 +32,6 @@ export const FileList = () => {
       return;
     }
 
-    // Cast the status to ensure it matches the FileConversion type
     const typedData = (data || []).map(file => ({
       ...file,
       status: file.status as FileConversion['status']
@@ -42,29 +41,30 @@ export const FileList = () => {
     setFiles(typedData);
   };
 
-  // Set up real-time subscription for status updates
   useEffect(() => {
-    const subscription = supabase
+    // Initial fetch
+    fetchFiles();
+
+    // Set up real-time subscription for all changes
+    const channel = supabase
       .channel('file_conversions_changes')
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'file_conversions' 
-        }, 
-        () => {
-          console.log("Received database change, refreshing files...");
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'file_conversions'
+        },
+        (payload) => {
+          console.log("Received database change:", payload);
           fetchFiles();
         }
       )
       .subscribe();
 
-    // Initial fetch
-    fetchFiles();
-
     // Cleanup subscription
     return () => {
-      subscription.unsubscribe();
+      channel.unsubscribe();
     };
   }, []);
 
