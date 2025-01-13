@@ -30,55 +30,21 @@ export const useFileUpload = (userId: string, onUploadComplete: () => void) => {
 
       // Create database record
       console.log("Creating database record");
-      const { data: fileData, error: dbError } = await supabase
+      const { error: dbError } = await supabase
         .from("file_conversions")
         .insert({
           user_id: userId,
           original_filename: file.name,
           pptx_path: pptxPath,
-          status: 'processing'
-        })
-        .select()
-        .single();
+          status: 'uploaded'  // Changed from 'processing' to 'uploaded'
+        });
 
       if (dbError) throw dbError;
 
-      // Get file URL for processing
-      const { data: { publicUrl } } = supabase.storage
-        .from("pptx_files")
-        .getPublicUrl(pptxPath);
-
-      // Trigger processing with file URL instead of raw file
-      console.log("Triggering processing function", fileData.id);
-      const { data: processData, error: processError } = await supabase.functions.invoke('process-pptx', {
-        body: { 
-          fileId: fileData.id,
-          fileUrl: publicUrl
-        }
+      toast({
+        title: "File uploaded",
+        description: "Your file has been uploaded. Click 'Process' to start processing.",
       });
-
-      if (processError) {
-        console.error("Processing error:", processError);
-        toast({
-          variant: "destructive",
-          title: "Processing failed",
-          description: "The file could not be processed. Please try again.",
-        });
-        return;
-      }
-
-      if (processData?.status === 'error') {
-        toast({
-          variant: "destructive",
-          title: "Processing failed",
-          description: processData.details || "An error occurred while processing the file.",
-        });
-      } else {
-        toast({
-          title: "File uploaded",
-          description: "Your file has been uploaded and is being processed.",
-        });
-      }
 
       onUploadComplete();
     } catch (error) {

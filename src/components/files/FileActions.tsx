@@ -1,6 +1,7 @@
-import { Trash2 } from "lucide-react";
+import { Trash2, Play } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
 
 interface FileActionsProps {
   id: string;
@@ -8,6 +9,7 @@ interface FileActionsProps {
   json_path: string | null;
   markdown_path: string | null;
   original_filename: string;
+  status: string;
   onDelete: () => void;
 }
 
@@ -17,6 +19,7 @@ export const FileActions = ({
   json_path,
   markdown_path,
   original_filename,
+  status,
   onDelete,
 }: FileActionsProps) => {
   const { toast } = useToast();
@@ -91,8 +94,50 @@ export const FileActions = ({
     }
   };
 
+  const handleProcess = async () => {
+    try {
+      const { data: { publicUrl } } = supabase.storage
+        .from("pptx_files")
+        .getPublicUrl(pptx_path);
+
+      const { error } = await supabase.functions.invoke('process-pptx', {
+        body: { 
+          fileId: id,
+          fileUrl: publicUrl
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Processing started",
+        description: "Your file is being processed. This may take a few moments.",
+      });
+
+      // Refresh the file list to show updated status
+      onDelete(); // This actually refreshes the list despite its name
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Processing failed",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+      });
+    }
+  };
+
   return (
     <div className="flex items-center space-x-4">
+      {status === 'uploaded' && (
+        <Button
+          onClick={handleProcess}
+          size="sm"
+          variant="outline"
+          className="flex items-center gap-2"
+        >
+          <Play className="h-4 w-4" />
+          Process
+        </Button>
+      )}
       <div className="space-x-2">
         {json_path && (
           <button

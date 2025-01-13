@@ -22,6 +22,7 @@ export const FileRow = ({ file, onDelete }: FileRowProps) => {
           json_path={file.json_path}
           markdown_path={file.markdown_path}
           original_filename={file.original_filename}
+          status={file.status}
           onDelete={onDelete}
         />
       </TableCell>
