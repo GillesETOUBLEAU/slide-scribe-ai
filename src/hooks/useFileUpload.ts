@@ -23,7 +23,7 @@ export const useFileUpload = (userId: string, onUploadComplete: () => void) => {
       const { error: uploadError } = await supabase.storage
         .from("pptx_files")
         .upload(pptxPath, file, {
-          onUploadProgress: (progress) => {
+          onProgress: (progress) => {
             const percentage = (progress.loaded / progress.total) * 100;
             setProgress(Math.round(percentage));
           },
