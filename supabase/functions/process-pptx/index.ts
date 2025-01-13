@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import * as XLSX from 'https://esm.sh/xlsx@0.18.5';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -43,19 +44,37 @@ serve(async (req) => {
 
     console.log('File downloaded successfully, size:', fileData.size);
 
-    // For now, create a simple JSON structure
+    // Process PPTX content using XLSX
+    const workbook = XLSX.read(new Uint8Array(await fileData.arrayBuffer()), {
+      type: 'array',
+      cellFormulas: false, // Disable formula parsing to save memory
+      cellStyles: false,   // Disable style parsing to save memory
+      cellNF: false,       // Disable number format parsing
+      cellDates: false,    // Disable date parsing
+    });
+
+    console.log('Workbook processed, sheets:', workbook.SheetNames);
+
     const structuredContent = {
       metadata: {
         processedAt: new Date().toISOString(),
-        sheetCount: 1
+        sheetCount: workbook.SheetNames.length
       },
-      slides: [{
-        index: 1,
-        title: "Processed PPTX",
-        content: ["PPTX content will be processed here"],
-        notes: [],
-        shapes: []
-      }]
+      slides: workbook.SheetNames.map((sheetName, index) => {
+        const sheet = workbook.Sheets[sheetName];
+        const textContent = XLSX.utils.sheet_to_json(sheet, { 
+          header: 1,
+          raw: false // Convert everything to strings
+        }).flat().filter(cell => cell);
+
+        return {
+          index: index + 1,
+          title: sheetName,
+          content: textContent,
+          notes: [],
+          shapes: []
+        };
+      })
     };
 
     // Generate file paths for the processed files
@@ -63,13 +82,18 @@ serve(async (req) => {
     const markdownPath = filePath.replace('.pptx', '.md');
     
     console.log('Uploading processed files');
-    const markdown = "# Processed PPTX\n\nContent will be processed here";
+
+    // Create markdown content
+    const markdown = `# ${filePath.split('/').pop()?.replace('.pptx', '')}\n\n` +
+      structuredContent.slides.map(slide => 
+        `## Slide ${slide.index}: ${slide.title}\n\n${slide.content.join('\n\n')}`
+      ).join('\n\n');
 
     // Upload both files
     const [jsonUpload, markdownUpload] = await Promise.all([
       supabase.storage
         .from('pptx_files')
-        .upload(jsonPath, JSON.stringify(structuredContent), {
+        .upload(jsonPath, JSON.stringify(structuredContent, null, 2), {
           contentType: 'application/json',
           upsert: true
         }),
