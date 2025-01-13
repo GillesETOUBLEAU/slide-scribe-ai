@@ -27,9 +27,7 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
     const presentationFile = zipContent.files['ppt/presentation.xml'];
     if (presentationFile) {
       const presentationContent = await presentationFile.async('string');
-      console.log("Processing presentation.xml");
-      const presentationDoc = parseXMLContent(presentationContent);
-      console.log("Presentation structure:", JSON.stringify(presentationDoc, null, 2));
+      console.log("Raw presentation.xml content:", presentationContent);
     }
 
     const slideFiles = Object.keys(zipContent.files)
@@ -47,37 +45,37 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
       try {
         console.log(`\nProcessing ${slideFile}`);
         const slideContent = await zipContent.files[slideFile].async('string');
-        console.log(`Raw slide content:`, slideContent);
+        console.log(`Raw slide content for ${slideFile}:`, slideContent);
         
         const xmlDoc = parseXMLContent(slideContent);
-        console.log("Parsed XML structure:", JSON.stringify(xmlDoc, null, 2));
         
         const slideIndex = parseInt(slideFile.match(/slide([0-9]+)\.xml/)?.[1] || '0');
+        console.log(`Processing slide ${slideIndex}`);
+
+        // Extract all text content first
+        const allTextContent = extractTextContent(xmlDoc);
+        console.log(`All text content from slide ${slideIndex}:`, allTextContent);
         
-        // Extract title
+        // Find title (usually first shape or specific placeholder)
         const title = findTitle(xmlDoc) || `Slide ${slideIndex}`;
-        console.log(`Slide ${slideIndex} title:`, title);
+        console.log(`Title for slide ${slideIndex}:`, title);
         
-        // Extract all text content
-        const content = extractTextContent(xmlDoc);
-        console.log(`Slide ${slideIndex} extracted content:`, content);
+        // Filter out title from content to avoid duplication
+        const content = allTextContent.filter(text => text !== title);
+        console.log(`Content for slide ${slideIndex}:`, content);
         
         // Extract shapes
         const shapes = extractShapes(xmlDoc);
-        console.log(`Found ${shapes.length} shapes in slide ${slideIndex}`);
+        console.log(`Shapes for slide ${slideIndex}:`, shapes);
         
         // Extract notes
         const notes = await extractNotes(zipContent, slideIndex);
-        console.log(`Found ${notes.length} notes in slide ${slideIndex}`);
-        
-        // Filter out title from content to avoid duplication
-        const slideContent = content.filter(text => text !== title);
-        console.log(`Final slide ${slideIndex} content:`, slideContent);
+        console.log(`Notes for slide ${slideIndex}:`, notes);
 
         processedContent.slides.push({
           index: slideIndex,
           title,
-          content: slideContent,
+          content,
           notes,
           shapes
         });
