@@ -7,7 +7,6 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -52,27 +51,35 @@ serve(async (req) => {
 
     console.log('File downloaded successfully, size:', fileContent.size);
 
-    // Generate paths for processed files
-    const jsonPath = fileData.pptx_path.replace('.pptx', '.json');
-    const markdownPath = fileData.pptx_path.replace('.pptx', '.md');
-
-    // Process PPTX content (simplified example)
+    // For now, create placeholder content (since we can't process PPTX directly)
     const processedContent = {
       metadata: {
         filename: fileData.original_filename,
-        processedAt: new Date().toISOString()
+        processedAt: new Date().toISOString(),
+        fileSize: fileContent.size
       },
       slides: [
         {
           index: 1,
-          title: "Example Slide",
-          content: "This is placeholder content as PPTX processing is not implemented yet"
+          title: "Processed Slide",
+          content: "This is a placeholder for the processed PPTX content."
         }
       ]
     };
 
     // Generate markdown content
-    const markdownContent = `# ${fileData.original_filename}\n\nProcessed at: ${new Date().toISOString()}\n\n## Slide 1\n\nThis is placeholder content as PPTX processing is not implemented yet`;
+    const markdownContent = `# ${fileData.original_filename}
+
+Processed at: ${new Date().toISOString()}
+File size: ${fileContent.size} bytes
+
+## Slide 1
+
+This is a placeholder for the processed PPTX content.`;
+
+    // Generate paths for processed files
+    const jsonPath = fileData.pptx_path.replace('.pptx', '.json');
+    const markdownPath = fileData.pptx_path.replace('.pptx', '.md');
 
     console.log('Uploading processed files');
 
@@ -97,7 +104,7 @@ serve(async (req) => {
 
     console.log('Files uploaded successfully');
 
-    // Update file status
+    // Update file status to completed
     const { error: updateError } = await supabase
       .from('file_conversions')
       .update({
@@ -119,7 +126,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Processing error:', error);
 
-    // Update file status to error
+    // Update file status to error if we have the fileId
     try {
       const { fileId } = await req.json();
       if (fileId) {
