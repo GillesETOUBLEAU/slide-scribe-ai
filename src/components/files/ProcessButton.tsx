@@ -27,13 +27,16 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
         throw updateError;
       }
 
-      console.log("Invoking process-pptx function");
+      console.log("Invoking process-pptx function with payload:", { fileId: id, filePath: pptx_path });
 
-      // Call the edge function to process the file
-      const { error } = await supabase.functions.invoke('process-pptx', {
+      // Call the edge function to process the file with explicit timeout
+      const { data, error } = await supabase.functions.invoke('process-pptx', {
         body: { 
           fileId: id,
           filePath: pptx_path
+        },
+        headers: {
+          'Content-Type': 'application/json',
         }
       });
 
@@ -41,6 +44,8 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
         console.error("Error from edge function:", error);
         throw error;
       }
+
+      console.log("Function response:", data);
 
       toast({
         title: "Processing started",
@@ -64,7 +69,7 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
       toast({
         variant: "destructive",
         title: "Processing failed",
-        description: error instanceof Error ? error.message : "Unknown error occurred",
+        description: "Failed to start processing. Please try again.",
       });
     }
   };
