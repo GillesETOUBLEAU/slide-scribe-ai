@@ -35,10 +35,12 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
       
       console.log("Invoking process-pptx function with payload:", payload);
 
+      // Explicitly stringify the payload and set more specific headers
       const { data, error } = await supabase.functions.invoke('process-pptx', {
-        body: payload,
+        body: JSON.stringify(payload),
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json; charset=utf-8',
+          'Accept': 'application/json'
         }
       });
 
