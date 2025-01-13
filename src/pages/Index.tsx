@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Auth } from "@supabase/auth-ui-react";
 import { ThemeSupa } from "@supabase/auth-ui-shared";
+import { AuthError } from "@supabase/supabase-js";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -29,7 +30,7 @@ const Index = () => {
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (error) {
         console.error("Error getting session:", error);
-        setAuthError(error.message);
+        setAuthError(getErrorMessage(error));
         return;
       }
       setSession(session);
@@ -58,6 +59,17 @@ const Index = () => {
       fetchFiles();
     }
   }, [session]);
+
+  const getErrorMessage = (error: AuthError) => {
+    switch (error.message) {
+      case "Invalid login credentials":
+        return "Invalid email or password. Please check your credentials and try again.";
+      case "Email not confirmed":
+        return "Please verify your email address before signing in.";
+      default:
+        return error.message;
+    }
+  };
 
   const fetchFiles = async () => {
     const { data, error } = await supabase
@@ -256,6 +268,3 @@ const Index = () => {
       </div>
     </div>
   );
-};
-
-export default Index;
