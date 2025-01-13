@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Table,
   TableBody,
@@ -20,18 +21,33 @@ const Index = () => {
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [authError, setAuthError] = useState("");
   const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error("Error getting session:", error);
+        setAuthError(error.message);
+        return;
+      }
       setSession(session);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Auth state changed:", event);
+      if (event === "SIGNED_IN") {
+        setAuthError("");
+        setSession(session);
+      } else if (event === "SIGNED_OUT") {
+        setSession(null);
+        setFiles([]);
+      } else if (event === "USER_UPDATED") {
+        setSession(session);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -86,7 +102,7 @@ const Index = () => {
 
       // Create file conversion record
       const { error: dbError } = await supabase.from("file_conversions").insert({
-        user_id: session.user.id, // Add the user_id field
+        user_id: session.user.id,
         original_filename: file.name,
         pptx_path: pptxPath,
       });
@@ -141,10 +157,23 @@ const Index = () => {
         <h1 className="text-2xl font-bold mb-6 text-center">
           PPTX Content Extractor
         </h1>
+        {authError && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertDescription>{authError}</AlertDescription>
+          </Alert>
+        )}
         <Auth
           supabaseClient={supabase}
-          appearance={{ theme: ThemeSupa }}
+          appearance={{ 
+            theme: ThemeSupa,
+            style: {
+              button: { background: 'rgb(59 130 246)', color: 'white' },
+              anchor: { color: 'rgb(59 130 246)' },
+            }
+          }}
           theme="light"
+          providers={[]}
+          redirectTo={window.location.origin}
         />
       </div>
     );
