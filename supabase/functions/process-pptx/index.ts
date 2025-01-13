@@ -1,7 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
-import { convertToMarkdown } from './markdown.ts';
-import { ProcessedContent } from './types.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,12 +13,12 @@ serve(async (req) => {
   }
 
   try {
-    const { fileId, fileUrl } = await req.json();
+    const { fileId, filePath } = await req.json();
     console.log('Starting processing for file:', fileId);
-    console.log('File URL:', fileUrl);
+    console.log('File path:', filePath);
 
-    if (!fileId || !fileUrl) {
-      throw new Error('Missing required parameters');
+    if (!fileId || !filePath) {
+      throw new Error('Missing required parameters: fileId and filePath are required');
     }
 
     const supabase = createClient(
@@ -28,34 +26,11 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Update status to processing
-    console.log('Updating status to processing');
-    const { error: statusError } = await supabase
-      .from('file_conversions')
-      .update({ status: 'processing' })
-      .eq('id', fileId);
-
-    if (statusError) {
-      console.error('Error updating status:', statusError);
-      throw statusError;
-    }
-
-    // Get the file record to access the pptx_path
-    const { data: fileRecord, error: fileError } = await supabase
-      .from('file_conversions')
-      .select('pptx_path')
-      .eq('id', fileId)
-      .single();
-
-    if (fileError || !fileRecord) {
-      console.error('Error fetching file record:', fileError);
-      throw new Error('File record not found');
-    }
-
-    console.log('Downloading file from path:', fileRecord.pptx_path);
+    // Download the file
+    console.log('Downloading file from storage...');
     const { data: fileData, error: downloadError } = await supabase.storage
       .from('pptx_files')
-      .download(fileRecord.pptx_path);
+      .download(filePath);
 
     if (downloadError) {
       console.error('Download error:', downloadError);
@@ -68,8 +43,8 @@ serve(async (req) => {
 
     console.log('File downloaded successfully, size:', fileData.size);
 
-    // For now, create a simple JSON structure since we can't parse PPTX directly
-    const structuredContent: ProcessedContent = {
+    // For now, create a simple JSON structure
+    const structuredContent = {
       metadata: {
         processedAt: new Date().toISOString(),
         sheetCount: 1
@@ -83,12 +58,14 @@ serve(async (req) => {
       }]
     };
 
-    const jsonPath = fileRecord.pptx_path.replace('.pptx', '.json');
-    const markdownPath = fileRecord.pptx_path.replace('.pptx', '.md');
+    // Generate file paths for the processed files
+    const jsonPath = filePath.replace('.pptx', '.json');
+    const markdownPath = filePath.replace('.pptx', '.md');
     
     console.log('Uploading processed files');
-    const markdown = convertToMarkdown(structuredContent);
+    const markdown = "# Processed PPTX\n\nContent will be processed here";
 
+    // Upload both files
     const [jsonUpload, markdownUpload] = await Promise.all([
       supabase.storage
         .from('pptx_files')
