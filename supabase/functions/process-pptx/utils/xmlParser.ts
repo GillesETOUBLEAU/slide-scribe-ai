@@ -12,24 +12,27 @@ export function extractTextContent(node: any): string[] {
   const textContents: string[] = [];
   
   function walkNode(n: any) {
-    // Handle text content directly
-    if (n.type === 'text' && n.content) {
-      const text = n.content.toString().trim();
-      if (text) textContents.push(text);
-      return;
-    }
-    
-    // Handle PowerPoint specific text containers
-    if (n.name === 'a:t') {
-      const text = n.children?.map((child: any) => 
-        child.type === 'text' ? child.content.toString() : ''
-      ).join('').trim();
+    // Handle PowerPoint text elements
+    if (n.name === 'a:t' && n.children) {
+      const text = n.children
+        .filter((child: any) => child.type === 'text')
+        .map((child: any) => child.content.toString())
+        .join('')
+        .trim();
       
-      if (text) textContents.push(text);
-      return;
+      if (text) {
+        textContents.push(text);
+      }
     }
     
-    // Recursively process children
+    // Handle text runs and paragraphs
+    if (n.name === 'a:r' || n.name === 'a:p' || n.name === 'p:txBody') {
+      if (Array.isArray(n.children)) {
+        n.children.forEach(walkNode);
+      }
+    }
+    
+    // Recursively process other elements
     if (Array.isArray(n.children)) {
       n.children.forEach(walkNode);
     }
@@ -67,7 +70,7 @@ export function findTitle(node: any): string {
     if (texts.length > 0) return texts[0];
   }
   
-  return 'Untitled Slide';
+  return '';
 }
 
 function findShapeByType(node: any, type: string): any {

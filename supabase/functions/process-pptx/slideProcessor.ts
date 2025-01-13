@@ -47,21 +47,18 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
       try {
         console.log(`Processing ${slideFile}`);
         const slideContent = await zipContent.files[slideFile].async('string');
-        const xmlDoc = parseXMLContent(slideContent);
+        console.log(`Raw slide content sample:`, slideContent.substring(0, 200));
         
+        const xmlDoc = parseXMLContent(slideContent);
         const slideIndex = parseInt(slideFile.match(/slide([0-9]+)\.xml/)?.[1] || '0');
         
-        // Extract title and content
+        // Extract title
         const title = findTitle(xmlDoc) || `Slide ${slideIndex}`;
         console.log(`Slide ${slideIndex} title:`, title);
         
         // Extract all text content
-        const allContent = extractTextContent(xmlDoc);
-        console.log(`Found ${allContent.length} text elements in slide ${slideIndex}`);
-        
-        // Filter out title from content
-        const content = allContent.filter(text => text !== title && text.trim() !== '');
-        console.log(`Slide ${slideIndex} content:`, content);
+        const content = extractTextContent(xmlDoc);
+        console.log(`Slide ${slideIndex} extracted content:`, content);
         
         // Extract shapes
         const shapes = extractShapes(xmlDoc);
@@ -74,7 +71,7 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
         processedContent.slides.push({
           index: slideIndex,
           title,
-          content,
+          content: content.filter(text => text !== title),
           notes,
           shapes
         });
