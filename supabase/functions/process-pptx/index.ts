@@ -4,16 +4,21 @@ import { processSlideContent } from "./slideProcessor.ts";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Content-Type': 'application/json'
 };
 
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { 
+      status: 204, 
+      headers: corsHeaders 
+    });
   }
 
   try {
-    // Parse request body once and store it
+    // Parse request body
     const requestData = await req.json();
     const { fileId, filePath } = requestData;
     console.log("Processing file:", { fileId, filePath });
@@ -30,7 +35,7 @@ serve(async (req) => {
       throw new Error('Missing required environment variables');
     }
 
-    // Update status to processing first
+    // Update status to processing
     console.log("Updating status to processing");
     const updateResponse = await fetch(
       `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
@@ -52,10 +57,10 @@ serve(async (req) => {
       throw new Error(`Failed to update status to processing: ${updateResponse.statusText}`);
     }
 
-    // Download the PPTX file using storage-api endpoint
+    // Download the PPTX file
     console.log("Downloading PPTX file from storage");
     const fileResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/authenticated/pptx_files/${filePath}`,
+      `${supabaseUrl}/storage/v1/object/public/pptx_files/${filePath}`,
       {
         headers: {
           Authorization: `Bearer ${supabaseKey}`,
@@ -66,8 +71,6 @@ serve(async (req) => {
 
     if (!fileResponse.ok) {
       console.error("File download failed:", fileResponse.status, fileResponse.statusText);
-      const responseText = await fileResponse.text();
-      console.error("Response body:", responseText);
       throw new Error(`Failed to download PPTX file: ${fileResponse.statusText}`);
     }
 
@@ -84,7 +87,7 @@ serve(async (req) => {
     const markdownPath = filePath.replace('.pptx', '.md');
 
     // Upload JSON file
-    console.log("Uploading JSON file to:", jsonPath);
+    console.log("Uploading JSON file");
     const jsonBlob = new Blob([JSON.stringify(processedContent, null, 2)], { 
       type: 'application/json' 
     });
@@ -108,16 +111,10 @@ serve(async (req) => {
     // Generate and upload markdown
     console.log("Generating markdown content");
     const markdownContent = `# ${processedContent.metadata.filename}\n\n` +
-      `Processed at: ${processedContent.metadata.processedAt}\n\n` +
       processedContent.slides.map(slide => 
-        `## Slide ${slide.index}: ${slide.title}\n\n` +
-        `${slide.content.join('\n\n')}\n\n` +
-        (slide.notes.length > 0 ? `### Notes\n\n${slide.notes.join('\n\n')}\n\n` : '') +
-        (slide.shapes.length > 0 ? `### Shapes\n\n${slide.shapes.map(shape => 
-          `- ${shape.type}: ${shape.text}`).join('\n')}\n\n` : '')
+        `## Slide ${slide.index}\n\n${slide.content.join('\n\n')}\n\n`
       ).join('\n');
 
-    console.log("Uploading Markdown file to:", markdownPath);
     const markdownBlob = new Blob([markdownContent], { type: 'text/markdown' });
     
     const markdownUploadResponse = await fetch(
@@ -136,8 +133,8 @@ serve(async (req) => {
       throw new Error(`Failed to upload Markdown file: ${markdownUploadResponse.statusText}`);
     }
 
-    // Update file status in database
-    console.log("Updating file status in database");
+    // Update file status
+    console.log("Updating file status");
     const finalUpdateResponse = await fetch(
       `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
       {
@@ -161,59 +158,52 @@ serve(async (req) => {
     }
 
     console.log("Processing completed successfully");
-
     return new Response(
-      JSON.stringify({ success: true, jsonPath, markdownPath }),
-      { 
-        headers: { 
-          ...corsHeaders, 
-          'Content-Type': 'application/json' 
-        },
-        status: 200
-      }
+      JSON.stringify({ success: true }),
+      { headers: corsHeaders }
     );
+
   } catch (error) {
     console.error('Processing error:', error);
-
-    // Update the file status to error
+    
+    // Update the file status to error if we have the fileId
     try {
-      const { fileId } = requestData;
-      const supabaseUrl = Deno.env.get('SUPABASE_URL');
-      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      const { fileId } = await req.json();
+      if (fileId) {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-      if (fileId && supabaseUrl && supabaseKey) {
-        await fetch(
-          `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
-          {
-            method: 'PATCH',
-            headers: {
-              Authorization: `Bearer ${supabaseKey}`,
-              apikey: supabaseKey,
-              'Content-Type': 'application/json',
-              Prefer: 'return=minimal',
-            },
-            body: JSON.stringify({
-              status: 'error',
-              error_message: error instanceof Error ? error.message : "Unknown error occurred",
-            }),
-          }
-        );
+        if (supabaseUrl && supabaseKey) {
+          await fetch(
+            `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
+            {
+              method: 'PATCH',
+              headers: {
+                Authorization: `Bearer ${supabaseKey}`,
+                apikey: supabaseKey,
+                'Content-Type': 'application/json',
+                Prefer: 'return=minimal',
+              },
+              body: JSON.stringify({
+                status: 'error',
+                error_message: error instanceof Error ? error.message : "Unknown error occurred",
+              }),
+            }
+          );
+        }
       }
     } catch (updateError) {
       console.error('Error updating file status:', updateError);
     }
-    
+
     return new Response(
       JSON.stringify({
         error: 'Processing failed',
         details: error instanceof Error ? error.message : "Unknown error occurred"
       }),
       { 
-        headers: { 
-          ...corsHeaders, 
-          'Content-Type': 'application/json' 
-        },
-        status: 500
+        status: 500,
+        headers: corsHeaders
       }
     );
   }
