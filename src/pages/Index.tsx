@@ -86,6 +86,7 @@ const Index = () => {
 
       // Create file conversion record
       const { error: dbError } = await supabase.from("file_conversions").insert({
+        user_id: session.user.id, // Add the user_id field
         original_filename: file.name,
         pptx_path: pptxPath,
       });
@@ -168,9 +169,7 @@ const Index = () => {
           onChange={handleFileUpload}
           disabled={uploading}
         />
-        {uploading && (
-          <Progress value={progress} className="mt-2" />
-        )}
+        {uploading && <Progress value={progress} className="mt-2" />}
       </div>
 
       <div className="bg-white rounded-lg shadow">
