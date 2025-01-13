@@ -33,15 +33,25 @@ serve(async (req) => {
       .single();
 
     if (fileError) throw fileError;
+    
+    console.log('File data retrieved:', fileData);
 
-    // Download the PPTX file
-    const response = await fetch(fileUrl);
+    // Get file URL with auth token
+    const { data: { publicUrl } } = supabase.storage
+      .from('pptx_files')
+      .getPublicUrl(fileData.pptx_path);
+
+    console.log('Attempting to download from:', publicUrl);
+
+    // Download the PPTX file using the public URL
+    const response = await fetch(publicUrl);
     if (!response.ok) {
-      throw new Error('Failed to download file');
+      console.error('Download failed:', response.status, response.statusText);
+      throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
     }
 
     const arrayBuffer = await response.arrayBuffer();
-    console.log('File downloaded, size:', arrayBuffer.byteLength);
+    console.log('File downloaded successfully, size:', arrayBuffer.byteLength);
 
     // Generate paths for processed files
     const jsonPath = fileData.pptx_path.replace('.pptx', '.json');
@@ -65,6 +75,8 @@ serve(async (req) => {
     // Generate markdown content
     const markdownContent = `# ${fileData.original_filename}\n\nProcessed at: ${new Date().toISOString()}\n\n## Slide 1\n\nThis is placeholder content as PPTX processing is not implemented yet`;
 
+    console.log('Uploading processed files');
+
     // Upload processed files
     const [jsonUpload, markdownUpload] = await Promise.all([
       supabase.storage
@@ -83,6 +95,8 @@ serve(async (req) => {
 
     if (jsonUpload.error) throw jsonUpload.error;
     if (markdownUpload.error) throw markdownUpload.error;
+
+    console.log('Files uploaded successfully');
 
     // Update file status
     const { error: updateError } = await supabase
@@ -106,7 +120,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Processing error:', error);
 
-    // Update file status to error if we have the fileId
+    // Update file status to error
     try {
       const { fileId } = await req.json();
       if (fileId) {
