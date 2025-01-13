@@ -33,7 +33,7 @@ serve(async (req) => {
         processedAt: new Date().toISOString(),
         filePath
       },
-      content: ['Processed content will be added here']
+      content: ['Sample slide content', 'More content here']
     };
 
     // Generate file paths
@@ -41,7 +41,11 @@ serve(async (req) => {
     const markdownPath = filePath.replace('.pptx', '.md');
 
     // Upload JSON file
-    const jsonBlob = new Blob([JSON.stringify(processedContent)], { type: 'application/json' });
+    const jsonBlob = new Blob([JSON.stringify(processedContent, null, 2)], { 
+      type: 'application/json' 
+    });
+    
+    console.log("Uploading JSON file to:", jsonPath);
     const jsonUploadResponse = await fetch(
       `${supabaseUrl}/storage/v1/object/pptx_files/${jsonPath}`,
       {
@@ -59,8 +63,10 @@ serve(async (req) => {
     }
 
     // Generate and upload markdown
-    const markdownContent = `# Processed File\n\nProcessed at: ${processedContent.metadata.processedAt}\n\n${processedContent.content.join('\n')}`;
+    const markdownContent = `# Processed File\n\nProcessed at: ${processedContent.metadata.processedAt}\n\n${processedContent.content.join('\n\n')}`;
     const markdownBlob = new Blob([markdownContent], { type: 'text/markdown' });
+    
+    console.log("Uploading Markdown file to:", markdownPath);
     const markdownUploadResponse = await fetch(
       `${supabaseUrl}/storage/v1/object/pptx_files/${markdownPath}`,
       {
@@ -78,6 +84,7 @@ serve(async (req) => {
     }
 
     // Update file status in database
+    console.log("Updating file status in database");
     const updateResponse = await fetch(
       `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
       {
