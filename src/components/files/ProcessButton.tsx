@@ -27,18 +27,12 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
         throw updateError;
       }
 
-      // Get the public URL for the file
-      const { data: { publicUrl } } = supabase.storage
-        .from("pptx_files")
-        .getPublicUrl(pptx_path);
-
-      console.log("Invoking process-pptx function with URL:", publicUrl);
+      console.log("Invoking process-pptx function");
 
       // Call the edge function to process the file
       const { error } = await supabase.functions.invoke('process-pptx', {
         body: { 
-          fileId: id,
-          fileUrl: publicUrl
+          fileId: id
         }
       });
 
