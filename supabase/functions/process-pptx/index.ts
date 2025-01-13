@@ -13,10 +13,10 @@ serve(async (req) => {
   }
 
   try {
-    const { fileId, fileUrl } = await req.json();
-    console.log('Processing file:', fileId, 'from URL:', fileUrl);
+    const { fileId } = await req.json();
+    console.log('Processing file:', fileId);
 
-    if (!fileId || !fileUrl) {
+    if (!fileId) {
       throw new Error('Missing required parameters');
     }
 
@@ -36,22 +36,21 @@ serve(async (req) => {
     
     console.log('File data retrieved:', fileData);
 
-    // Get file URL with auth token
-    const { data: { publicUrl } } = supabase.storage
+    // Download the PPTX file directly from storage
+    const { data: fileContent, error: downloadError } = await supabase.storage
       .from('pptx_files')
-      .getPublicUrl(fileData.pptx_path);
+      .download(fileData.pptx_path);
 
-    console.log('Attempting to download from:', publicUrl);
-
-    // Download the PPTX file using the public URL
-    const response = await fetch(publicUrl);
-    if (!response.ok) {
-      console.error('Download failed:', response.status, response.statusText);
-      throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
+    if (downloadError) {
+      console.error('Download error:', downloadError);
+      throw new Error(`Failed to download file: ${downloadError.message}`);
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    console.log('File downloaded successfully, size:', arrayBuffer.byteLength);
+    if (!fileContent) {
+      throw new Error('No file content received');
+    }
+
+    console.log('File downloaded successfully, size:', fileContent.size);
 
     // Generate paths for processed files
     const jsonPath = fileData.pptx_path.replace('.pptx', '.json');
