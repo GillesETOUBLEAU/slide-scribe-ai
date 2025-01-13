@@ -1,17 +1,16 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 import JSZip from "https://esm.sh/jszip@3.10.1";
 import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
 import { processSlides } from "./slideProcessor.ts";
-import { generateMarkdown } from "./markdown.ts";
 import type { FileData } from "./types.ts";
-
-// Initialize Supabase client
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function handleFileProcessing(fileId: string, filePath: string) {
   console.log(`Starting processing for file: ${fileId}`);
+  
+  // Initialize Supabase client
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseKey);
   
   try {
     // Download the PPTX file
@@ -95,4 +94,38 @@ async function processFile(fileData: ArrayBuffer): Promise<FileData> {
     },
     slides,
   };
+}
+
+function generateMarkdown(content: FileData): string {
+  let markdown = `# Presentation Content\n\n`;
+  markdown += `Processed at: ${content.metadata.processedAt}\n\n`;
+
+  content.slides.forEach((slide) => {
+    markdown += `## Slide ${slide.index}: ${slide.title}\n\n`;
+    
+    // Add content
+    slide.content.forEach((text) => {
+      markdown += `${text}\n\n`;
+    });
+
+    // Add notes if present
+    if (slide.notes.length > 0) {
+      markdown += `### Notes\n\n`;
+      slide.notes.forEach((note) => {
+        markdown += `- ${note}\n`;
+      });
+      markdown += '\n';
+    }
+
+    // Add shapes if present
+    if (slide.shapes.length > 0) {
+      markdown += `### Shapes\n\n`;
+      slide.shapes.forEach((shape) => {
+        markdown += `- ${shape.type}: ${shape.text}\n`;
+      });
+      markdown += '\n';
+    }
+  });
+
+  return markdown;
 }
