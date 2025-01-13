@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 import JSZip from "https://esm.sh/jszip@3.10.1";
+import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -62,7 +63,8 @@ serve(async (req) => {
     if (presentationXml) {
       const parser = new DOMParser();
       const presentationDoc = parser.parseFromString(presentationXml, "text/xml");
-      structuredContent.metadata.slideCount = presentationDoc.getElementsByTagName("p:sld").length;
+      const slideElements = presentationDoc.getElementsByTagName("p:sld");
+      structuredContent.metadata.slideCount = slideElements.length;
     }
 
     // Process each slide
@@ -176,7 +178,8 @@ async function processSlide(zip: JSZip, zipEntry: JSZip.JSZipObject) {
 
   // Extract text content
   const textElements = slideDoc.getElementsByTagName("a:t");
-  for (const textElement of textElements) {
+  for (let i = 0; i < textElements.length; i++) {
+    const textElement = textElements[i];
     const text = textElement.textContent?.trim();
     if (text) {
       if (!slide.title) {
@@ -194,7 +197,8 @@ async function processSlide(zip: JSZip, zipEntry: JSZip.JSZipObject) {
     const notesContent = await notesFile.async("string");
     const notesDoc = parser.parseFromString(notesContent, "text/xml");
     const noteElements = notesDoc.getElementsByTagName("a:t");
-    for (const noteElement of noteElements) {
+    for (let i = 0; i < noteElements.length; i++) {
+      const noteElement = noteElements[i];
       const noteText = noteElement.textContent?.trim();
       if (noteText) {
         slide.notes.push(noteText);
