@@ -10,29 +10,56 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function processFile(supabase: any, fileId: string, fileUrl: string) {
-  console.log('Starting file processing:', fileId);
-  
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
   try {
+    const { fileId, fileUrl } = await req.json();
+    console.log('Processing request for file:', fileId);
+    console.log('File URL:', fileUrl);
+
+    if (!fileId || !fileUrl) {
+      throw new Error('Missing required parameters');
+    }
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
     // Update status to processing
     await supabase
       .from('file_conversions')
       .update({ status: 'processing' })
       .eq('id', fileId);
 
-    console.log('Downloading file from URL:', fileUrl);
-    const response = await fetch(fileUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to download file: ${response.statusText}`);
+    // Download the file using the Supabase client instead of direct URL
+    const bucketPath = fileUrl.split('/object/public/pptx_files/')[1];
+    if (!bucketPath) {
+      throw new Error('Invalid file URL format');
     }
+
+    console.log('Downloading file from bucket path:', bucketPath);
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from('pptx_files')
+      .download(bucketPath);
+
+    if (downloadError) {
+      console.error('Download error:', downloadError);
+      throw new Error(`Failed to download file: ${downloadError.message}`);
+    }
+
+    if (!fileData) {
+      throw new Error('No file data received');
+    }
+
+    console.log('File downloaded successfully, size:', fileData.size);
+
+    // Convert Blob to ArrayBuffer
+    const arrayBuffer = await fileData.arrayBuffer();
     
-    const arrayBuffer = await response.arrayBuffer();
-    console.log('File downloaded successfully, size:', arrayBuffer.byteLength);
-
-    if (arrayBuffer.byteLength === 0) {
-      throw new Error('Downloaded file is empty');
-    }
-
     const workbook = XLSX.read(new Uint8Array(arrayBuffer), {
       type: 'array',
       cellFormulas: true,
@@ -52,18 +79,8 @@ async function processFile(supabase: any, fileId: string, fileUrl: string) {
       )
     };
 
-    const { data: fileData } = await supabase
-      .from('file_conversions')
-      .select('pptx_path')
-      .eq('id', fileId)
-      .single();
-
-    if (!fileData) {
-      throw new Error('File record not found');
-    }
-
-    const jsonPath = fileData.pptx_path.replace('.pptx', '.json');
-    const markdownPath = fileData.pptx_path.replace('.pptx', '.md');
+    const jsonPath = bucketPath.replace('.pptx', '.json');
+    const markdownPath = bucketPath.replace('.pptx', '.md');
     
     const markdown = convertToMarkdown(structuredContent);
 
@@ -94,56 +111,41 @@ async function processFile(supabase: any, fileId: string, fileUrl: string) {
       .eq('id', fileId);
 
     console.log('Processing completed successfully');
-    return { success: true };
-
-  } catch (error) {
-    console.error('Processing error:', error);
-    
-    await supabase
-      .from('file_conversions')
-      .update({
-        status: 'error',
-        error_message: error instanceof Error ? error.message : "Unknown error occurred"
-      })
-      .eq('id', fileId);
-
-    throw error;
-  }
-}
-
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    const { fileId, fileUrl } = await req.json();
-    console.log('Processing request for file:', fileId);
-
-    if (!fileId || !fileUrl) {
-      throw new Error('Missing required parameters');
-    }
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
-
-    const result = await processFile(supabase, fileId, fileUrl);
-
     return new Response(
-      JSON.stringify(result),
+      JSON.stringify({ success: true }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Processing error:', error);
+    
+    // Only attempt to update the status if we have fileId
+    try {
+      const { fileId } = await req.json();
+      if (fileId) {
+        const supabase = createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        );
+
+        await supabase
+          .from('file_conversions')
+          .update({
+            status: 'error',
+            error_message: error instanceof Error ? error.message : "Unknown error occurred"
+          })
+          .eq('id', fileId);
+      }
+    } catch (updateError) {
+      console.error('Failed to update error status:', updateError);
+    }
+
     return new Response(
       JSON.stringify({
         error: 'Processing failed',
-        details: error instanceof Error ? error.message : 'Unknown error occurred'
+        details: error instanceof Error ? error.message : "Unknown error occurred"
       }),
-      {
+      { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 500
       }
