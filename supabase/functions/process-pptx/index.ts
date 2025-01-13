@@ -1,7 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
-import * as XLSX from 'https://esm.sh/xlsx@0.18.5';
-import { processSheet } from './extractors.ts';
 import { convertToMarkdown } from './markdown.ts';
 import { ProcessedContent } from './types.ts';
 
@@ -64,28 +62,19 @@ serve(async (req) => {
 
     console.log('File downloaded successfully, size:', fileData.size);
 
-    // Convert Blob to ArrayBuffer
-    const arrayBuffer = await fileData.arrayBuffer();
-    
-    console.log('Parsing XLSX file');
-    const workbook = XLSX.read(new Uint8Array(arrayBuffer), {
-      type: 'array',
-      cellFormulas: false,
-      cellDates: true,
-      cellNF: true,
-    });
-
-    console.log('XLSX file parsed successfully');
-    console.log('Number of sheets:', workbook.SheetNames.length);
-
+    // For now, create a simple JSON structure since we can't parse PPTX directly
     const structuredContent: ProcessedContent = {
       metadata: {
         processedAt: new Date().toISOString(),
-        sheetCount: workbook.SheetNames.length
+        sheetCount: 1
       },
-      slides: workbook.SheetNames.map((sheetName, index) => 
-        processSheet(workbook.Sheets[sheetName], index)
-      )
+      slides: [{
+        index: 1,
+        title: "Processed PPTX",
+        content: ["PPTX content will be processed here"],
+        notes: [],
+        shapes: []
+      }]
     };
 
     const jsonPath = bucketPath.replace('.pptx', '.json');

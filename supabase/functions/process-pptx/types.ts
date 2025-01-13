@@ -1,6 +1,9 @@
-export interface SlideShape {
-  type: string;
-  text: string;
+export interface ProcessedContent {
+  metadata: {
+    processedAt: string;
+    sheetCount: number;
+  };
+  slides: Slide[];
 }
 
 export interface Slide {
@@ -11,10 +14,7 @@ export interface Slide {
   shapes: SlideShape[];
 }
 
-export interface ProcessedContent {
-  metadata: {
-    processedAt: string;
-    sheetCount: number;
-  };
-  slides: Slide[];
+export interface SlideShape {
+  type: string;
+  text: string;
 }
