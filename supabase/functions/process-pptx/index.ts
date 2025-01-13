@@ -4,8 +4,8 @@ import { processSlideContent } from "./slideProcessor.ts";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Content-Type': 'application/json'
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Content-Type': 'application/json',
 };
 
 serve(async (req) => {
@@ -160,7 +160,12 @@ serve(async (req) => {
     console.log("Processing completed successfully");
     return new Response(
       JSON.stringify({ success: true }),
-      { headers: corsHeaders }
+      { 
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        }
+      }
     );
 
   } catch (error) {
@@ -203,7 +208,10 @@ serve(async (req) => {
       }),
       { 
         status: 500,
-        headers: corsHeaders
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        }
       }
     );
   }
