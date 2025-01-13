@@ -1,5 +1,5 @@
 import JSZip from "https://esm.sh/jszip@3.10.1";
-import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
+import { parse as parseXML } from "https://deno.land/x/xml@2.1.3/mod.ts";
 import type { FileData } from "./types.ts";
 
 export async function handleFileProcessing(fileId: string, filePath: string) {
@@ -74,7 +74,7 @@ export async function handleFileProcessing(fileId: string, filePath: string) {
       throw new Error(`Failed to upload Markdown: ${markdownUploadResponse.statusText}`);
     }
 
-    // Update database record using REST API
+    // Update database record
     const updateResponse = await fetch(
       `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
       {
@@ -101,7 +101,7 @@ export async function handleFileProcessing(fileId: string, filePath: string) {
   } catch (error) {
     console.error('Error processing file:', error);
 
-    // Update database record with error using REST API
+    // Update database record with error
     await fetch(
       `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
       {
@@ -135,15 +135,18 @@ async function processFile(fileData: ArrayBuffer): Promise<FileData> {
   const slides = await Promise.all(
     slideEntries.map(async ([name, file], index) => {
       const content = await file.async('string');
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(content, 'text/xml');
+      const xmlDoc = parseXML(content);
+      
+      if (!xmlDoc) {
+        throw new Error('Failed to parse slide XML content');
+      }
       
       return {
         index: index + 1,
-        title: extractTitle(doc) || `Slide ${index + 1}`,
-        content: extractContent(doc),
+        title: extractTitle(xmlDoc) || `Slide ${index + 1}`,
+        content: extractContent(xmlDoc),
         notes: await extractNotes(zipContent, index + 1),
-        shapes: extractShapes(doc)
+        shapes: extractShapes(xmlDoc)
       };
     })
   );
@@ -158,16 +161,14 @@ async function processFile(fileData: ArrayBuffer): Promise<FileData> {
   };
 }
 
-function extractTitle(doc: Document): string {
-  const titleElement = doc.querySelector('p\\:title, title');
-  return titleElement?.textContent?.trim() || '';
+function extractTitle(doc: any): string {
+  const titleNode = findNode(doc, 'p:title') || findNode(doc, 'title');
+  return titleNode ? extractTextFromNode(titleNode) : '';
 }
 
-function extractContent(doc: Document): string[] {
-  const textElements = doc.querySelectorAll('a\\:t');
-  return Array.from(textElements)
-    .map(el => el.textContent?.trim())
-    .filter((text): text is string => !!text);
+function extractContent(doc: any): string[] {
+  const textNodes = findNodes(doc, 'a:t');
+  return textNodes.map(node => extractTextFromNode(node)).filter(Boolean);
 }
 
 async function extractNotes(zip: JSZip, slideNumber: number): Promise<string[]> {
@@ -175,21 +176,54 @@ async function extractNotes(zip: JSZip, slideNumber: number): Promise<string[]> 
   if (!notesFile) return [];
 
   const content = await notesFile.async('string');
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(content, 'text/xml');
+  const xmlDoc = parseXML(content);
   
-  const noteElements = doc.querySelectorAll('a\\:t');
-  return Array.from(noteElements)
-    .map(el => el.textContent?.trim())
-    .filter((text): text is string => !!text);
+  if (!xmlDoc) return [];
+  
+  const noteNodes = findNodes(xmlDoc, 'a:t');
+  return noteNodes.map(node => extractTextFromNode(node)).filter(Boolean);
 }
 
-function extractShapes(doc: Document): { type: string; text: string; }[] {
-  const shapes = doc.querySelectorAll('p\\:sp');
-  return Array.from(shapes).map(shape => ({
-    type: shape.querySelector('p\\:nvSpPr')?.textContent?.trim() || 'shape',
-    text: shape.querySelector('a\\:t')?.textContent?.trim() || ''
+function extractShapes(doc: any): { type: string; text: string; }[] {
+  const shapes = findNodes(doc, 'p:sp');
+  return shapes.map(shape => ({
+    type: findNode(shape, 'p:nvSpPr')?.textContent?.trim() || 'shape',
+    text: findNode(shape, 'a:t')?.textContent?.trim() || ''
   }));
+}
+
+function findNode(node: any, name: string): any {
+  if (node.type === name) return node;
+  if (node.children) {
+    for (const child of node.children) {
+      const found = findNode(child, name);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function findNodes(node: any, name: string): any[] {
+  const nodes: any[] = [];
+  if (node.type === name) nodes.push(node);
+  if (node.children) {
+    for (const child of node.children) {
+      nodes.push(...findNodes(child, name));
+    }
+  }
+  return nodes;
+}
+
+function extractTextFromNode(node: any): string {
+  if (!node) return '';
+  if (typeof node.value === 'string') return node.value.trim();
+  if (node.children) {
+    return node.children
+      .map((child: any) => extractTextFromNode(child))
+      .join('')
+      .trim();
+  }
+  return '';
 }
 
 function generateMarkdown(content: FileData): string {
