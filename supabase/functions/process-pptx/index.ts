@@ -5,15 +5,18 @@ import * as XLSX from 'https://esm.sh/xlsx@0.18.5'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
     const { fileId } = await req.json()
+    console.log('Processing file:', fileId)
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -27,7 +30,10 @@ serve(async (req) => {
       .eq('id', fileId)
       .single()
 
-    if (fileError) throw fileError
+    if (fileError) {
+      console.error('Error fetching file data:', fileError)
+      throw fileError
+    }
 
     // Download PPTX file
     const { data: fileContent, error: downloadError } = await supabase
@@ -35,10 +41,14 @@ serve(async (req) => {
       .from('pptx_files')
       .download(fileData.pptx_path)
 
-    if (downloadError) throw downloadError
+    if (downloadError) {
+      console.error('Error downloading file:', downloadError)
+      throw downloadError
+    }
 
     // Process PPTX content
     const result = await extractPPTXContent(fileContent)
+    console.log('File processed successfully')
 
     // Upload JSON and Markdown files
     const jsonPath = fileData.pptx_path.replace('.pptx', '.json')
@@ -52,14 +62,20 @@ serve(async (req) => {
       .from('pptx_files')
       .upload(jsonPath, jsonBlob)
 
-    if (jsonUploadError) throw jsonUploadError
+    if (jsonUploadError) {
+      console.error('Error uploading JSON:', jsonUploadError)
+      throw jsonUploadError
+    }
 
     const { error: markdownUploadError } = await supabase
       .storage
       .from('pptx_files')
       .upload(markdownPath, markdownBlob)
 
-    if (markdownUploadError) throw markdownUploadError
+    if (markdownUploadError) {
+      console.error('Error uploading Markdown:', markdownUploadError)
+      throw markdownUploadError
+    }
 
     // Update file conversion record
     const { error: updateError } = await supabase
@@ -71,17 +87,31 @@ serve(async (req) => {
       })
       .eq('id', fileId)
 
-    if (updateError) throw updateError
+    if (updateError) {
+      console.error('Error updating file record:', updateError)
+      throw updateError
+    }
 
     return new Response(
       JSON.stringify({ success: true }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { 
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json' 
+        } 
+      }
     )
   } catch (error) {
     console.error('Error:', error)
     return new Response(
       JSON.stringify({ error: error.message }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+      { 
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json' 
+        }, 
+        status: 500 
+      }
     )
   }
 })

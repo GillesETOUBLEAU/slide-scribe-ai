@@ -36,17 +36,29 @@ export const FileUpload = ({ userId, onUploadComplete }: FileUploadProps) => {
 
       if (uploadError) throw uploadError;
 
-      const { error: dbError } = await supabase.from("file_conversions").insert({
-        user_id: userId,
-        original_filename: file.name,
-        pptx_path: pptxPath,
-      });
+      const { data: fileData, error: dbError } = await supabase
+        .from("file_conversions")
+        .insert({
+          user_id: userId,
+          original_filename: file.name,
+          pptx_path: pptxPath,
+          status: 'processing'
+        })
+        .select()
+        .single();
 
       if (dbError) throw dbError;
 
+      // Trigger processing
+      const { error: processError } = await supabase.functions.invoke('process-pptx', {
+        body: { fileId: fileData.id }
+      });
+
+      if (processError) throw processError;
+
       toast({
         title: "File uploaded successfully",
-        description: "Your file is being processed",
+        description: "Your file is being processed. You'll see the results shortly.",
       });
 
       onUploadComplete();
