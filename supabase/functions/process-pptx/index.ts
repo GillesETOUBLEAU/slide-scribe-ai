@@ -9,7 +9,10 @@ const corsHeaders = {
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { 
+      headers: corsHeaders,
+      status: 200
+    });
   }
 
   try {
@@ -31,7 +34,7 @@ serve(async (req) => {
     // Download the PPTX file
     console.log("Downloading PPTX file from storage");
     const fileResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/pptx_files/${filePath}`,
+      `${supabaseUrl}/storage/v1/object/public/pptx_files/${filePath}`,
       {
         headers: {
           Authorization: `Bearer ${supabaseKey}`,
@@ -62,7 +65,7 @@ serve(async (req) => {
     });
     
     const jsonUploadResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/pptx_files/${jsonPath}`,
+      `${supabaseUrl}/storage/v1/object/public/pptx_files/${jsonPath}`,
       {
         method: 'POST',
         headers: {
@@ -93,7 +96,7 @@ serve(async (req) => {
     const markdownBlob = new Blob([markdownContent], { type: 'text/markdown' });
     
     const markdownUploadResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/pptx_files/${markdownPath}`,
+      `${supabaseUrl}/storage/v1/object/public/pptx_files/${markdownPath}`,
       {
         method: 'POST',
         headers: {
@@ -136,35 +139,45 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({ success: true, jsonPath, markdownPath }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { 
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json' 
+        },
+        status: 200
+      }
     );
   } catch (error) {
     console.error('Processing error:', error);
 
     // If we have a fileId, update the status to error
-    if (req.json && (await req.json()).fileId) {
-      const { fileId } = await req.json();
-      const supabaseUrl = Deno.env.get('SUPABASE_URL');
-      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    try {
+      if (req.json && (await req.json()).fileId) {
+        const { fileId } = await req.json();
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-      if (supabaseUrl && supabaseKey) {
-        await fetch(
-          `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
-          {
-            method: 'PATCH',
-            headers: {
-              Authorization: `Bearer ${supabaseKey}`,
-              apikey: supabaseKey,
-              'Content-Type': 'application/json',
-              Prefer: 'return=minimal',
-            },
-            body: JSON.stringify({
-              status: 'error',
-              error_message: error instanceof Error ? error.message : "Unknown error occurred",
-            }),
-          }
-        );
+        if (supabaseUrl && supabaseKey) {
+          await fetch(
+            `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
+            {
+              method: 'PATCH',
+              headers: {
+                Authorization: `Bearer ${supabaseKey}`,
+                apikey: supabaseKey,
+                'Content-Type': 'application/json',
+                Prefer: 'return=minimal',
+              },
+              body: JSON.stringify({
+                status: 'error',
+                error_message: error instanceof Error ? error.message : "Unknown error occurred",
+              }),
+            }
+          );
+        }
       }
+    } catch (updateError) {
+      console.error('Error updating file status:', updateError);
     }
     
     return new Response(
@@ -173,7 +186,10 @@ serve(async (req) => {
         details: error instanceof Error ? error.message : "Unknown error occurred"
       }),
       { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json' 
+        },
         status: 500
       }
     );
