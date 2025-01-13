@@ -68,6 +68,10 @@ export const FileUpload = ({ userId, onUploadComplete }: FileUploadProps) => {
 
       console.log("Processing response:", processData);
 
+      if (!processData.success) {
+        throw new Error(processData.error || 'Processing failed');
+      }
+
       toast({
         title: "File uploaded successfully",
         description: "Your file is being processed. You'll see the results shortly.",

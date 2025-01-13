@@ -1,49 +1,64 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import * as XLSX from 'https://esm.sh/xlsx@0.18.5'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import * as XLSX from 'https://esm.sh/xlsx@0.18.5';
 
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
+};
 
 export const createSupabaseClient = () => {
-  return createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  )
-}
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing Supabase environment variables');
+    throw new Error('Missing required environment variables');
+  }
+
+  return createClient(supabaseUrl, supabaseKey);
+};
 
 export const getFileData = async (supabase: any, fileId: string) => {
-  console.log('Fetching file data from database')
+  console.log('Getting file data for ID:', fileId);
   const { data, error } = await supabase
     .from('file_conversions')
     .select('*')
     .eq('id', fileId)
-    .single()
+    .single();
 
   if (error) {
-    console.error('Error fetching file data:', error)
-    throw error
+    console.error('Error fetching file data:', error);
+    throw error;
   }
 
-  return data
-}
+  if (!data) {
+    console.error('No file data found');
+    throw new Error('File not found');
+  }
+
+  return data;
+};
 
 export const downloadPPTX = async (supabase: any, pptxPath: string) => {
-  console.log('Downloading PPTX file:', pptxPath)
+  console.log('Downloading PPTX from path:', pptxPath);
   const { data, error } = await supabase
     .storage
     .from('pptx_files')
-    .download(pptxPath)
+    .download(pptxPath);
 
   if (error) {
-    console.error('Error downloading file:', error)
-    throw error
+    console.error('Error downloading PPTX:', error);
+    throw error;
   }
 
-  return data
-}
+  if (!data) {
+    console.error('No file content received');
+    throw new Error('Failed to download file content');
+  }
+
+  return data;
+};
 
 export const uploadProcessedFiles = async (
   supabase: any,
@@ -52,25 +67,37 @@ export const uploadProcessedFiles = async (
   jsonContent: any,
   markdownContent: string
 ) => {
-  const jsonBlob = new Blob([JSON.stringify(jsonContent, null, 2)], { type: 'application/json' })
-  const markdownBlob = new Blob([markdownContent], { type: 'text/markdown' })
+  console.log('Uploading processed files');
+  console.log('JSON path:', jsonPath);
+  console.log('Markdown path:', markdownPath);
 
-  console.log('Uploading JSON file')
+  const jsonBlob = new Blob([JSON.stringify(jsonContent, null, 2)], { type: 'application/json' });
+  const markdownBlob = new Blob([markdownContent], { type: 'text/markdown' });
+
+  // Upload JSON
   const { error: jsonError } = await supabase
     .storage
     .from('pptx_files')
-    .upload(jsonPath, jsonBlob)
+    .upload(jsonPath, jsonBlob);
 
-  if (jsonError) throw jsonError
+  if (jsonError) {
+    console.error('Error uploading JSON:', jsonError);
+    throw jsonError;
+  }
 
-  console.log('Uploading Markdown file')
+  // Upload Markdown
   const { error: markdownError } = await supabase
     .storage
     .from('pptx_files')
-    .upload(markdownPath, markdownBlob)
+    .upload(markdownPath, markdownBlob);
 
-  if (markdownError) throw markdownError
-}
+  if (markdownError) {
+    console.error('Error uploading Markdown:', markdownError);
+    throw markdownError;
+  }
+
+  console.log('Files uploaded successfully');
+};
 
 export const updateFileStatus = async (
   supabase: any,
@@ -78,7 +105,7 @@ export const updateFileStatus = async (
   jsonPath: string,
   markdownPath: string
 ) => {
-  console.log('Updating file conversion record')
+  console.log('Updating file status for ID:', fileId);
   const { error } = await supabase
     .from('file_conversions')
     .update({
@@ -86,78 +113,18 @@ export const updateFileStatus = async (
       markdown_path: markdownPath,
       status: 'completed'
     })
-    .eq('id', fileId)
+    .eq('id', fileId);
 
-  if (error) throw error
-}
-
-export const extractSlideTitle = (sheet: any) => {
-  const titleCells = ['A1', 'B1', 'C1']
-  for (const cell of titleCells) {
-    if (sheet[cell] && sheet[cell].v) {
-      return sheet[cell].v.toString()
-    }
+  if (error) {
+    console.error('Error updating file status:', error);
+    throw error;
   }
-  return 'Untitled Slide'
-}
 
-export const extractNotes = (sheet: any) => {
-  const notes = []
-  if (sheet['!comments']) {
-    Object.values(sheet['!comments']).forEach((comment: any) => {
-      if (comment.t) notes.push(comment.t)
-    })
-  }
-  return notes
-}
-
-export const extractShapes = (sheet: any) => {
-  const shapes = []
-  if (sheet['!drawings']) {
-    sheet['!drawings'].forEach((drawing: any) => {
-      if (drawing.shape) {
-        shapes.push({
-          type: drawing.shape.type,
-          text: drawing.shape.text || ''
-        })
-      }
-    })
-  }
-  return shapes
-}
-
-export const convertToMarkdown = (structuredContent: any) => {
-  let markdown = `# ${structuredContent.metadata.lastModified}\n\n`
-
-  structuredContent.slides.forEach((slide: any) => {
-    markdown += `## Slide ${slide.index}: ${slide.title}\n\n`
-
-    slide.content.forEach((text: string) => {
-      if (text.trim()) {
-        markdown += `${text}\n\n`
-      }
-    })
-
-    if (slide.notes.length > 0) {
-      markdown += '### Notes\n\n'
-      slide.notes.forEach((note: string) => {
-        markdown += `> ${note}\n\n`
-      })
-    }
-
-    if (slide.shapes.length > 0) {
-      markdown += '### Shapes\n\n'
-      slide.shapes.forEach((shape: any) => {
-        markdown += `- ${shape.type}: ${shape.text}\n`
-      })
-      markdown += '\n'
-    }
-  })
-
-  return markdown
-}
+  console.log('File status updated successfully');
+};
 
 export const extractPPTXContent = async (file: ArrayBuffer) => {
+  console.log('Starting PPTX content extraction');
   try {
     const workbook = XLSX.read(file, {
       type: 'array',
@@ -166,39 +133,63 @@ export const extractPPTXContent = async (file: ArrayBuffer) => {
       cellDates: true,
       cellNF: true,
       sheetStubs: true
-    })
+    });
+
+    console.log('Workbook loaded successfully');
+    console.log('Number of sheets:', workbook.SheetNames.length);
 
     const structuredContent = {
       metadata: {
         lastModified: new Date().toISOString(),
+        sheetCount: workbook.SheetNames.length
       },
       slides: []
-    }
+    };
 
     workbook.SheetNames.forEach((sheetName, index) => {
-      const sheet = workbook.Sheets[sheetName]
-      const slideContent = {
-        index: index + 1,
-        title: extractSlideTitle(sheet),
-        content: [],
-        notes: extractNotes(sheet),
-        shapes: extractShapes(sheet)
-      }
-
+      console.log(`Processing sheet ${index + 1}: ${sheetName}`);
+      const sheet = workbook.Sheets[sheetName];
+      
+      // Extract text content
       const textContent = XLSX.utils.sheet_to_json(sheet, { header: 1 })
         .flat()
-        .filter(cell => cell && typeof cell === 'string')
+        .filter(cell => cell && typeof cell === 'string');
 
-      slideContent.content = textContent
-      structuredContent.slides.push(slideContent)
-    })
+      console.log(`Sheet ${index + 1} content length:`, textContent.length);
 
+      structuredContent.slides.push({
+        index: index + 1,
+        name: sheetName,
+        content: textContent
+      });
+    });
+
+    console.log('Content extraction completed');
     return {
       json: structuredContent,
       markdown: convertToMarkdown(structuredContent)
-    }
+    };
   } catch (error) {
-    console.error('Error processing PPTX:', error)
-    throw error
+    console.error('Error in PPTX extraction:', error);
+    throw error;
   }
-}
+};
+
+const convertToMarkdown = (structuredContent: any) => {
+  console.log('Converting content to markdown');
+  let markdown = `# Presentation Content\n\n`;
+  markdown += `Last Modified: ${structuredContent.metadata.lastModified}\n\n`;
+
+  structuredContent.slides.forEach((slide: any) => {
+    markdown += `## Slide ${slide.index}: ${slide.name}\n\n`;
+    
+    slide.content.forEach((text: string) => {
+      if (text.trim()) {
+        markdown += `${text}\n\n`;
+      }
+    });
+  });
+
+  console.log('Markdown conversion completed');
+  return markdown;
+};

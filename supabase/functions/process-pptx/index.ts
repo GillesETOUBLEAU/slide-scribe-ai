@@ -10,48 +10,89 @@ import {
 } from "./utils.ts"
 
 serve(async (req) => {
+  console.log("Edge function started");
+  
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
+    console.log("Handling CORS preflight request");
+    return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { fileId } = await req.json()
-    console.log('Starting processing for file:', fileId)
+    const { fileId } = await req.json();
+    console.log('Processing file:', fileId);
 
-    const supabase = createSupabaseClient()
+    if (!fileId) {
+      console.error('No fileId provided');
+      throw new Error('No fileId provided');
+    }
+
+    const supabase = createSupabaseClient();
+    console.log('Supabase client created');
     
-    // Get file data and process it
-    const fileData = await getFileData(supabase, fileId)
-    const fileContent = await downloadPPTX(supabase, fileData.pptx_path)
-    const result = await extractPPTXContent(fileContent)
+    // Get file data
+    console.log('Fetching file data from database');
+    const fileData = await getFileData(supabase, fileId);
+    console.log('File data retrieved:', fileData);
     
-    // Generate file paths
-    const jsonPath = fileData.pptx_path.replace('.pptx', '.json')
-    const markdownPath = fileData.pptx_path.replace('.pptx', '.md')
+    // Download PPTX
+    console.log('Downloading PPTX file');
+    const fileContent = await downloadPPTX(supabase, fileData.pptx_path);
+    console.log('PPTX file downloaded successfully');
+    
+    // Process content
+    console.log('Extracting PPTX content');
+    const result = await extractPPTXContent(fileContent);
+    console.log('Content extracted successfully');
+    
+    // Generate paths
+    const jsonPath = fileData.pptx_path.replace('.pptx', '.json');
+    const markdownPath = fileData.pptx_path.replace('.pptx', '.md');
     
     // Upload processed files
+    console.log('Uploading processed files');
     await uploadProcessedFiles(
       supabase,
       jsonPath,
       markdownPath,
       result.json,
       result.markdown
-    )
+    );
+    console.log('Processed files uploaded successfully');
     
-    // Update file status
-    await updateFileStatus(supabase, fileId, jsonPath, markdownPath)
+    // Update status
+    console.log('Updating file status');
+    await updateFileStatus(supabase, fileId, jsonPath, markdownPath);
+    console.log('File status updated successfully');
 
-    console.log('Processing completed successfully')
+    console.log('Processing completed successfully');
     return new Response(
       JSON.stringify({ success: true }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    );
   } catch (error) {
-    console.error('Processing error:', error)
+    console.error('Processing error:', error);
+    
+    // Try to update the file status with error
+    try {
+      const supabase = createSupabaseClient();
+      await supabase
+        .from('file_conversions')
+        .update({
+          status: 'error',
+          error_message: error.message
+        })
+        .eq('id', req.fileId);
+    } catch (updateError) {
+      console.error('Failed to update error status:', updateError);
+    }
+
     return new Response(
       JSON.stringify({ error: error.message }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
-    )
+      { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500
+      }
+    );
   }
-})
+});
