@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { processSlideContent } from "./slideProcessor.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -27,25 +28,39 @@ serve(async (req) => {
       throw new Error('Missing required environment variables');
     }
 
-    // Create simple JSON and Markdown content
-    const processedContent = {
-      metadata: {
-        processedAt: new Date().toISOString(),
-        filePath
-      },
-      content: ['Sample slide content', 'More content here']
-    };
+    // Download the PPTX file
+    console.log("Downloading PPTX file from storage");
+    const fileResponse = await fetch(
+      `${supabaseUrl}/storage/v1/object/pptx_files/${filePath}`,
+      {
+        headers: {
+          Authorization: `Bearer ${supabaseKey}`,
+          apikey: supabaseKey,
+        },
+      }
+    );
+
+    if (!fileResponse.ok) {
+      throw new Error(`Failed to download PPTX file: ${fileResponse.statusText}`);
+    }
+
+    const fileBlob = await fileResponse.blob();
+    
+    // Process the PPTX content
+    console.log("Processing PPTX content");
+    const processedContent = await processSlideContent(fileBlob);
+    processedContent.metadata.filePath = filePath;
 
     // Generate file paths
     const jsonPath = filePath.replace('.pptx', '.json');
     const markdownPath = filePath.replace('.pptx', '.md');
 
     // Upload JSON file
+    console.log("Uploading JSON file to:", jsonPath);
     const jsonBlob = new Blob([JSON.stringify(processedContent, null, 2)], { 
       type: 'application/json' 
     });
     
-    console.log("Uploading JSON file to:", jsonPath);
     const jsonUploadResponse = await fetch(
       `${supabaseUrl}/storage/v1/object/pptx_files/${jsonPath}`,
       {
@@ -63,10 +78,20 @@ serve(async (req) => {
     }
 
     // Generate and upload markdown
-    const markdownContent = `# Processed File\n\nProcessed at: ${processedContent.metadata.processedAt}\n\n${processedContent.content.join('\n\n')}`;
+    console.log("Generating markdown content");
+    const markdownContent = `# ${processedContent.metadata.filename}\n\n` +
+      `Processed at: ${processedContent.metadata.processedAt}\n\n` +
+      processedContent.slides.map(slide => 
+        `## Slide ${slide.index}: ${slide.title}\n\n` +
+        `${slide.content.join('\n\n')}\n\n` +
+        (slide.notes.length > 0 ? `### Notes\n\n${slide.notes.join('\n\n')}\n\n` : '') +
+        (slide.shapes.length > 0 ? `### Shapes\n\n${slide.shapes.map(shape => 
+          `- ${shape.type}: ${shape.text}`).join('\n')}\n\n` : '')
+      ).join('\n');
+
+    console.log("Uploading Markdown file to:", markdownPath);
     const markdownBlob = new Blob([markdownContent], { type: 'text/markdown' });
     
-    console.log("Uploading Markdown file to:", markdownPath);
     const markdownUploadResponse = await fetch(
       `${supabaseUrl}/storage/v1/object/pptx_files/${markdownPath}`,
       {
