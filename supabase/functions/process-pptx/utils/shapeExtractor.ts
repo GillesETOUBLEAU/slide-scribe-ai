@@ -5,44 +5,36 @@ export function extractShapes(node: any): SlideShape[] {
   const shapes: SlideShape[] = [];
   
   function walkShapes(n: any) {
-    // Handle shape elements
-    if (n.name === 'p:sp') {
-      let shapeType = 'shape';
-      let shapeText = '';
+    // Handle specific shape types
+    if (n.name === 'p:sp' || n.name === 'p:graphicFrame' || n.name === 'p:pic') {
+      let shapeType = n.name.replace('p:', '');
+      let shapeName = '';
       
-      // Extract shape type
+      // Try to get shape name from properties
       if (n.children) {
-        const nvSpPr = n.children.find((child: any) => child.name === 'p:nvSpPr');
-        if (nvSpPr?.children) {
-          const cNvPr = nvSpPr.children.find((child: any) => child.name === 'p:cNvPr');
+        const nvProps = n.children.find((c: any) => 
+          c.name === 'p:nvSpPr' || c.name === 'p:nvGraphicFramePr' || c.name === 'p:nvPicPr'
+        );
+        
+        if (nvProps?.children) {
+          const cNvPr = nvProps.children.find((c: any) => c.name === 'p:cNvPr');
           if (cNvPr?.attributes?.name) {
-            shapeType = cNvPr.attributes.name;
+            shapeName = cNvPr.attributes.name;
           }
         }
       }
       
-      // Extract shape text content
-      const texts = extractTextContent(n);
-      if (texts.length > 0) {
-        shapeText = texts.join(' ');
-      }
-      
-      if (shapeText) {
-        shapes.push({ type: shapeType, text: shapeText });
-      }
-    }
-    
-    // Handle other shape types (textboxes, etc.)
-    if (n.name === 'p:graphicFrame' || n.name === 'p:pic') {
+      // Get shape text content
       const texts = extractTextContent(n);
       if (texts.length > 0) {
         shapes.push({
-          type: n.name.replace('p:', ''),
+          type: shapeName || shapeType,
           text: texts.join(' ')
         });
       }
     }
     
+    // Recursively process children
     if (n.children) {
       n.children.forEach(walkShapes);
     }

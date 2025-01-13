@@ -12,23 +12,30 @@ export function extractTextContent(node: any): string[] {
   const textContents: string[] = [];
   
   function walkNode(n: any) {
-    // Check for text content in various PPTX XML elements
-    if (n.name === 'a:t' && n.content) {
-      const text = Array.isArray(n.content) 
-        ? n.content.join('').trim()
-        : String(n.content).trim();
+    // Handle direct text content
+    if (n.type === 'text' && typeof n.content === 'string') {
+      const text = n.content.trim();
+      if (text) textContents.push(text);
+      return;
+    }
+    
+    // Handle XML text elements
+    if (n.name === 'a:t') {
+      let text = '';
+      if (Array.isArray(n.children)) {
+        text = n.children
+          .filter((child: any) => child.type === 'text')
+          .map((child: any) => child.content)
+          .join('')
+          .trim();
+      } else if (n.content) {
+        text = String(n.content).trim();
+      }
       if (text) textContents.push(text);
     }
     
-    // Special handling for paragraphs and text runs
-    if (n.name === 'p:sp' || n.name === 'a:p' || n.name === 'a:r') {
-      if (n.children) {
-        n.children.forEach(walkNode);
-      }
-    }
-    
-    // Recursively process all children
-    if (n.children) {
+    // Recursively process children
+    if (Array.isArray(n.children)) {
       n.children.forEach(walkNode);
     }
   }
@@ -41,7 +48,6 @@ export function findTitle(node: any): string {
   let title = '';
   
   function walkTitleNode(n: any): boolean {
-    // Check specific title-related elements
     if (n.name === 'p:title' || n.name === 'p:cSld') {
       const titleTexts = extractTextContent(n);
       if (titleTexts.length > 0) {
@@ -50,7 +56,6 @@ export function findTitle(node: any): string {
       }
     }
     
-    // Check for title placeholder
     if (n.name === 'p:ph' && n.attributes?.type === 'title') {
       const parent = n.parent;
       if (parent) {

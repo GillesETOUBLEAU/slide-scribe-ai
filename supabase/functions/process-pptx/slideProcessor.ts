@@ -12,6 +12,7 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
     const zip = new JSZip();
     const zipContent = await zip.loadAsync(arrayBuffer);
     console.log("PPTX file unzipped successfully");
+    console.log("Available files in PPTX:", Object.keys(zipContent.files));
 
     const processedContent: FileData = {
       metadata: {
@@ -22,47 +23,69 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
       slides: []
     };
 
-    const slideFiles = Object.keys(zipContent.files)
-      .filter(name => name.startsWith('ppt/slides/slide') && name.endsWith('.xml'))
-      .sort();
+    // Process presentation.xml first to get metadata
+    const presentationFile = zipContent.files['ppt/presentation.xml'];
+    if (presentationFile) {
+      const presentationContent = await presentationFile.async('string');
+      console.log("Presentation XML content:", presentationContent.substring(0, 500));
+    }
 
-    console.log(`Found ${slideFiles.length} slides`);
+    const slideFiles = Object.keys(zipContent.files)
+      .filter(name => name.match(/ppt\/slides\/slide[0-9]+\.xml/))
+      .sort((a, b) => {
+        const numA = parseInt(a.match(/slide([0-9]+)\.xml/)?.[1] || '0');
+        const numB = parseInt(b.match(/slide([0-9]+)\.xml/)?.[1] || '0');
+        return numA - numB;
+      });
+
+    console.log("Found slide files:", slideFiles);
     processedContent.metadata.slideCount = slideFiles.length;
 
-    for (const [index, slideFile] of slideFiles.entries()) {
-      console.log(`Processing slide ${index + 1}: ${slideFile}`);
-      
+    for (const slideFile of slideFiles) {
       try {
         const slideContent = await zipContent.files[slideFile].async('string');
+        console.log(`Processing ${slideFile}, content length: ${slideContent.length}`);
+        
         const xmlDoc = parseXMLContent(slideContent);
-
-        // Extract slide content
-        const title = findTitle(xmlDoc);
-        const content = extractTextContent(xmlDoc)
-          .filter(text => text !== title)
-          .filter(text => text.trim() !== '');
-          
-        console.log(`Slide ${index + 1} content:`, content);
-
-        // Extract notes and shapes
-        const notes = await extractNotes(zipContent, index + 1);
+        console.log("Parsed XML structure:", JSON.stringify(xmlDoc, null, 2).substring(0, 500));
+        
+        const slideIndex = parseInt(slideFile.match(/slide([0-9]+)\.xml/)?.[1] || '0');
+        
+        // Extract all text content first
+        const allTexts = extractTextContent(xmlDoc);
+        console.log(`Found ${allTexts.length} text elements in slide ${slideIndex}`);
+        
+        // Process slide title
+        let title = findTitle(xmlDoc) || `Slide ${slideIndex}`;
+        console.log(`Slide ${slideIndex} title:`, title);
+        
+        // Filter content to remove title
+        const content = allTexts.filter(text => text !== title);
+        console.log(`Slide ${slideIndex} content:`, content);
+        
+        // Extract shapes
         const shapes = extractShapes(xmlDoc);
-
+        console.log(`Found ${shapes.length} shapes in slide ${slideIndex}`);
+        
+        // Extract notes
+        const notes = await extractNotes(zipContent, slideIndex);
+        console.log(`Found ${notes.length} notes in slide ${slideIndex}`);
+        
         processedContent.slides.push({
-          index: index + 1,
-          title: title || `Slide ${index + 1}`,
+          index: slideIndex,
+          title,
           content,
           notes,
           shapes
         });
 
-        console.log(`Completed processing slide ${index + 1}`);
+        console.log(`Completed processing slide ${slideIndex}`);
       } catch (error) {
-        console.error(`Error processing slide ${index + 1}:`, error);
-        // Add an error slide
+        console.error(`Error processing slide ${slideFile}:`, error);
+        const slideIndex = parseInt(slideFile.match(/slide([0-9]+)\.xml/)?.[1] || '0');
         processedContent.slides.push({
-          index: index + 1,
-          title: `Slide ${index + 1} (Error)`,
+          index: slideIndex,
+          title: `Slide ${slideIndex} (Error)`,
           content: [`Error processing slide: ${error.message}`],
           notes: [],
           shapes: []
@@ -70,19 +93,9 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
       }
     }
 
-    // Add default slide if no slides were found
-    if (processedContent.slides.length === 0) {
-      console.log("No slides found, adding default slide");
-      processedContent.slides.push({
-        index: 1,
-        title: "Slide 1",
-        content: ["No content could be extracted from this presentation"],
-        notes: [],
-        shapes: []
-      });
-      processedContent.metadata.slideCount = 1;
-    }
-
+    // Ensure slides are sorted by index
+    processedContent.slides.sort((a, b) => a.index - b.index);
+    
     console.log("PPTX processing completed successfully");
     return processedContent;
   } catch (error) {
