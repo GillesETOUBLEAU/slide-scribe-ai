@@ -3,13 +3,18 @@ import { handleFileProcessing } from "./handlers.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Max-Age': '86400',
 };
 
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { 
+      headers: corsHeaders,
+      status: 204 
+    });
   }
 
   try {
@@ -42,7 +47,7 @@ serve(async (req) => {
     // Process the file
     const result = await handleFileProcessing(fileId, filePath);
 
-    // Return success response
+    // Return success response with CORS headers
     return new Response(
       JSON.stringify({ success: true, data: result }),
       {
