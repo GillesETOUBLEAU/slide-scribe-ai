@@ -1,6 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 import * as XLSX from 'https://esm.sh/xlsx@0.18.5';
+import { processSheet } from './extractors.ts';
+import { convertToMarkdown } from './markdown.ts';
+import { ProcessedContent } from './types.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,20 +14,17 @@ async function processFile(supabase: any, fileId: string, fileUrl: string) {
   console.log('Starting file processing:', fileId);
   
   try {
-    // Update status to processing
     await supabase
       .from('file_conversions')
       .update({ status: 'processing' })
       .eq('id', fileId);
 
-    // Download the file
     const response = await fetch(fileUrl);
     if (!response.ok) throw new Error('Failed to download file');
     
     const arrayBuffer = await response.arrayBuffer();
     console.log('File downloaded, size:', arrayBuffer.byteLength);
 
-    // Process the file
     const workbook = XLSX.read(new Uint8Array(arrayBuffer), {
       type: 'array',
       cellFormulas: true,
@@ -32,26 +32,16 @@ async function processFile(supabase: any, fileId: string, fileUrl: string) {
       cellNF: true,
     });
 
-    const structuredContent = {
+    const structuredContent: ProcessedContent = {
       metadata: {
         processedAt: new Date().toISOString(),
         sheetCount: workbook.SheetNames.length
       },
-      slides: workbook.SheetNames.map((sheetName, index) => {
-        const sheet = workbook.Sheets[sheetName];
-        const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-        
-        return {
-          index: index + 1,
-          title: extractSlideTitle(sheet),
-          content: data.flat().filter(cell => cell && typeof cell === 'string'),
-          notes: extractNotes(sheet),
-          shapes: extractShapes(sheet)
-        };
-      })
+      slides: workbook.SheetNames.map((sheetName, index) => 
+        processSheet(workbook.Sheets[sheetName], index)
+      )
     };
 
-    // Generate file paths
     const { data: fileData } = await supabase
       .from('file_conversions')
       .select('pptx_path')
@@ -61,10 +51,8 @@ async function processFile(supabase: any, fileId: string, fileUrl: string) {
     const jsonPath = fileData.pptx_path.replace('.pptx', '.json');
     const markdownPath = fileData.pptx_path.replace('.pptx', '.md');
     
-    // Generate markdown
     const markdown = convertToMarkdown(structuredContent);
 
-    // Upload processed files
     await Promise.all([
       supabase.storage
         .from('pptx_files')
@@ -80,7 +68,6 @@ async function processFile(supabase: any, fileId: string, fileUrl: string) {
         })
     ]);
 
-    // Update status to completed
     await supabase
       .from('file_conversions')
       .update({
@@ -106,77 +93,6 @@ async function processFile(supabase: any, fileId: string, fileUrl: string) {
 
     throw error;
   }
-}
-
-function extractSlideTitle(sheet: XLSX.WorkSheet): string {
-  // Look for title in first few cells
-  const titleCells = ['A1', 'B1', 'C1'];
-  for (const cell of titleCells) {
-    if (sheet[cell] && sheet[cell].v) {
-      return String(sheet[cell].v);
-    }
-  }
-  return 'Untitled Slide';
-}
-
-function extractNotes(sheet: XLSX.WorkSheet): string[] {
-  const notes: string[] = [];
-  // Look for notes in comments
-  if (sheet['!comments']) {
-    Object.values(sheet['!comments']).forEach(comment => {
-      if (comment.t) notes.push(comment.t);
-    });
-  }
-  return notes;
-}
-
-function extractShapes(sheet: XLSX.WorkSheet): Array<{ type: string; text: string }> {
-  const shapes: Array<{ type: string; text: string }> = [];
-  // Extract shapes from drawings if available
-  if (sheet['!drawings']) {
-    sheet['!drawings'].forEach((drawing: any) => {
-      if (drawing.shape) {
-        shapes.push({
-          type: drawing.shape.type || 'unknown',
-          text: drawing.shape.text || ''
-        });
-      }
-    });
-  }
-  return shapes;
-}
-
-function convertToMarkdown(content: any): string {
-  let markdown = `# Presentation Content\n\n`;
-  markdown += `Processed at: ${content.metadata.processedAt}\n`;
-  markdown += `Total Slides: ${content.metadata.sheetCount}\n\n`;
-
-  content.slides.forEach((slide: any) => {
-    markdown += `## Slide ${slide.index}: ${slide.title}\n\n`;
-    
-    slide.content.forEach((text: string) => {
-      if (text?.trim()) {
-        markdown += `${text}\n\n`;
-      }
-    });
-
-    if (slide.notes.length > 0) {
-      markdown += '### Notes\n\n';
-      slide.notes.forEach((note: string) => {
-        markdown += `> ${note}\n\n`;
-      });
-    }
-
-    if (slide.shapes.length > 0) {
-      markdown += '### Shapes\n\n';
-      slide.shapes.forEach((shape: any) => {
-        markdown += `- ${shape.type}: ${shape.text}\n`;
-      });
-      markdown += '\n';
-    }
-  });
-
-  return markdown;
 }
 
 serve(async (req) => {
