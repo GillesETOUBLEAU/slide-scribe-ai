@@ -16,12 +16,14 @@ export const FileList = () => {
   const { toast } = useToast();
 
   const fetchFiles = async () => {
+    console.log("Fetching files...");
     const { data, error } = await supabase
       .from("file_conversions")
       .select("*")
       .order("created_at", { ascending: false });
 
     if (error) {
+      console.error("Error fetching files:", error);
       toast({
         variant: "destructive",
         title: "Error fetching files",
@@ -36,11 +38,34 @@ export const FileList = () => {
       status: file.status as FileConversion['status']
     }));
 
+    console.log("Files fetched:", typedData);
     setFiles(typedData);
   };
 
+  // Set up real-time subscription for status updates
   useEffect(() => {
+    const subscription = supabase
+      .channel('file_conversions_changes')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'file_conversions' 
+        }, 
+        () => {
+          console.log("Received database change, refreshing files...");
+          fetchFiles();
+        }
+      )
+      .subscribe();
+
+    // Initial fetch
     fetchFiles();
+
+    // Cleanup subscription
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   return (

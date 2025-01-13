@@ -14,18 +14,27 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
 
   const handleProcess = async () => {
     try {
+      console.log("Starting processing for file:", id);
+      
       // Update status to processing
       const { error: updateError } = await supabase
         .from("file_conversions")
         .update({ status: 'processing' })
         .eq('id', id);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error("Error updating status:", updateError);
+        throw updateError;
+      }
 
+      // Get the public URL for the file
       const { data: { publicUrl } } = supabase.storage
         .from("pptx_files")
         .getPublicUrl(pptx_path);
 
+      console.log("Invoking process-pptx function with URL:", publicUrl);
+
+      // Call the edge function to process the file
       const { error } = await supabase.functions.invoke('process-pptx', {
         body: { 
           fileId: id,
@@ -33,15 +42,21 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error from edge function:", error);
+        throw error;
+      }
 
       toast({
         title: "Processing started",
         description: "Your file is being processed. This may take a few moments.",
       });
 
+      // Trigger refresh of file list
       onProcess();
     } catch (error) {
+      console.error("Processing failed:", error);
+      
       // Update status back to uploaded if processing fails to start
       await supabase
         .from("file_conversions")
