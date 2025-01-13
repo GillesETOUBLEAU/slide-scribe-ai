@@ -160,9 +160,7 @@ serve(async (req) => {
     console.log("Processing completed successfully");
     return new Response(
       JSON.stringify({ success: true }),
-      { 
-        headers: corsHeaders
-      }
+      { headers: corsHeaders }
     );
 
   } catch (error) {
