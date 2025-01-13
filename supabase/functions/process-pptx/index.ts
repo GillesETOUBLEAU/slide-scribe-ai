@@ -40,16 +40,22 @@ serve(async (req) => {
       throw statusError;
     }
 
-    // Extract bucket path from URL
-    const bucketPath = decodeURIComponent(fileUrl.split('/object/public/pptx_files/')[1]);
-    if (!bucketPath) {
-      throw new Error('Invalid file URL format');
+    // Get the file record to access the pptx_path
+    const { data: fileRecord, error: fileError } = await supabase
+      .from('file_conversions')
+      .select('pptx_path')
+      .eq('id', fileId)
+      .single();
+
+    if (fileError || !fileRecord) {
+      console.error('Error fetching file record:', fileError);
+      throw new Error('File record not found');
     }
 
-    console.log('Downloading file from bucket path:', bucketPath);
+    console.log('Downloading file from path:', fileRecord.pptx_path);
     const { data: fileData, error: downloadError } = await supabase.storage
       .from('pptx_files')
-      .download(bucketPath);
+      .download(fileRecord.pptx_path);
 
     if (downloadError) {
       console.error('Download error:', downloadError);
@@ -77,8 +83,8 @@ serve(async (req) => {
       }]
     };
 
-    const jsonPath = bucketPath.replace('.pptx', '.json');
-    const markdownPath = bucketPath.replace('.pptx', '.md');
+    const jsonPath = fileRecord.pptx_path.replace('.pptx', '.json');
+    const markdownPath = fileRecord.pptx_path.replace('.pptx', '.md');
     
     console.log('Uploading processed files');
     const markdown = convertToMarkdown(structuredContent);
