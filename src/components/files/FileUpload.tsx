@@ -26,12 +26,12 @@ export const FileUpload = ({ userId, onUploadComplete }: FileUploadProps) => {
     }
 
     // Check file size before uploading
-    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+    const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
     if (file.size > MAX_FILE_SIZE) {
       toast({
         variant: "destructive",
         title: "File too large",
-        description: "Maximum file size is 5MB",
+        description: "Maximum file size is 500MB",
       });
       return;
     }
