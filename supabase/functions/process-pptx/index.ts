@@ -1,80 +1,136 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createSuccessResponse, createErrorResponse, createCorsPreflightResponse } from "./utils/responseHandlers.ts";
-import { downloadAndProcessFile, uploadProcessedFiles } from "./utils/fileProcessing.ts";
-import { updateFileStatus } from "./utils/databaseOperations.ts";
+import { corsHeaders } from "./utils.ts";
 
 serve(async (req) => {
-  // Add detailed logging
-  console.log("Request received:", {
-    method: req.method,
-    url: req.url,
-    headers: Object.fromEntries(req.headers.entries())
-  });
-  
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    console.log("Handling CORS preflight request");
-    return createCorsPreflightResponse();
+    return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const requestData = await req.json();
-    console.log("Request data:", requestData);
+    console.log("Received request:", req.method, req.url);
     
-    const { fileId, filePath } = requestData;
+    // Parse request body
+    let payload;
+    try {
+      payload = await req.json();
+      console.log("Request payload:", payload);
+    } catch (e) {
+      console.error("Error parsing request JSON:", e);
+      throw new Error("Invalid JSON payload");
+    }
+
+    const { fileId, filePath } = payload;
     if (!fileId || !filePath) {
-      throw new Error('Missing required parameters: fileId and filePath are required');
+      throw new Error("Missing required parameters: fileId and filePath");
     }
 
     // Validate environment variables
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Missing required environment variables');
+      throw new Error("Missing required environment variables");
     }
 
-    console.log("Starting processing for file:", fileId);
-    await updateFileStatus(supabaseUrl, supabaseKey, fileId, 'processing');
-
-    const processedContent = await downloadAndProcessFile(supabaseUrl, supabaseKey, filePath);
-    console.log("File processed successfully");
-
-    const { jsonPath, markdownPath } = await uploadProcessedFiles(
-      supabaseUrl,
-      supabaseKey,
-      filePath,
-      processedContent
+    // Update status to processing
+    console.log("Updating status to processing for file:", fileId);
+    const updateResponse = await fetch(
+      `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${supabaseKey}`,
+          apikey: supabaseKey,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({
+          status: "processing",
+        }),
+      }
     );
-    console.log("Processed files uploaded successfully");
 
-    await updateFileStatus(supabaseUrl, supabaseKey, fileId, 'completed', { jsonPath, markdownPath });
-    console.log("Processing completed successfully");
+    if (!updateResponse.ok) {
+      throw new Error(`Failed to update status: ${updateResponse.statusText}`);
+    }
 
-    return createSuccessResponse({ success: true });
+    // Download the file
+    console.log("Downloading file:", filePath);
+    const fileResponse = await fetch(
+      `${supabaseUrl}/storage/v1/object/public/pptx_files/${filePath}`,
+      {
+        headers: {
+          Authorization: `Bearer ${supabaseKey}`,
+          apikey: supabaseKey,
+        },
+      }
+    );
+
+    if (!fileResponse.ok) {
+      throw new Error(`Failed to download file: ${fileResponse.statusText}`);
+    }
+
+    // Process the file
+    const fileData = await fileResponse.arrayBuffer();
+    console.log("File downloaded, size:", fileData.byteLength);
+
+    // Return success response
+    return new Response(
+      JSON.stringify({ success: true, message: "Processing started" }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+        status: 200,
+      }
+    );
 
   } catch (error) {
-    console.error('Processing error:', error);
+    console.error("Error processing request:", error);
     
+    // Try to update file status to error if we have fileId
     try {
       const { fileId } = await req.json();
       if (fileId) {
-        const supabaseUrl = Deno.env.get('SUPABASE_URL');
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
+        const supabaseUrl = Deno.env.get("SUPABASE_URL");
+        const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        
         if (supabaseUrl && supabaseKey) {
-          await updateFileStatus(
-            supabaseUrl,
-            supabaseKey,
-            fileId,
-            'error',
-            undefined,
-            error instanceof Error ? error.message : "Unknown error occurred"
+          await fetch(
+            `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
+            {
+              method: "PATCH",
+              headers: {
+                Authorization: `Bearer ${supabaseKey}`,
+                apikey: supabaseKey,
+                "Content-Type": "application/json",
+                Prefer: "return=minimal",
+              },
+              body: JSON.stringify({
+                status: "error",
+                error_message: error instanceof Error ? error.message : "Unknown error occurred",
+              }),
+            }
           );
         }
       }
     } catch (updateError) {
-      console.error('Error updating file status:', updateError);
+      console.error("Error updating file status:", updateError);
     }
 
-    return createErrorResponse(error);
+    return new Response(
+      JSON.stringify({
+        error: "Processing failed",
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+        status: 500,
+      }
+    );
   }
 });
