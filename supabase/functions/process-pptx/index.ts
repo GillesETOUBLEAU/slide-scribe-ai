@@ -9,10 +9,7 @@ const corsHeaders = {
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { 
-      headers: corsHeaders,
-      status: 200
-    });
+    return new Response(null, { headers: corsHeaders });
   }
 
   try {
@@ -55,10 +52,10 @@ serve(async (req) => {
       throw new Error(`Failed to update status to processing: ${updateResponse.statusText}`);
     }
 
-    // Download the PPTX file
+    // Download the PPTX file using storage-api endpoint
     console.log("Downloading PPTX file from storage");
     const fileResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/public/pptx_files/${filePath}`,
+      `${supabaseUrl}/storage/v1/object/authenticated/pptx_files/${filePath}`,
       {
         headers: {
           Authorization: `Bearer ${supabaseKey}`,
@@ -68,10 +65,14 @@ serve(async (req) => {
     );
 
     if (!fileResponse.ok) {
+      console.error("File download failed:", fileResponse.status, fileResponse.statusText);
+      const responseText = await fileResponse.text();
+      console.error("Response body:", responseText);
       throw new Error(`Failed to download PPTX file: ${fileResponse.statusText}`);
     }
 
     const fileBlob = await fileResponse.blob();
+    console.log("File downloaded successfully, size:", fileBlob.size);
     
     // Process the PPTX content
     console.log("Processing PPTX content");
@@ -176,7 +177,7 @@ serve(async (req) => {
 
     // Update the file status to error
     try {
-      const { fileId } = await req.json();
+      const { fileId } = requestData;
       const supabaseUrl = Deno.env.get('SUPABASE_URL');
       const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
