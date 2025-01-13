@@ -29,7 +29,7 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
       const presentationContent = await presentationFile.async('string');
       console.log("Processing presentation.xml");
       const presentationDoc = parseXMLContent(presentationContent);
-      // Extract any global metadata if needed
+      console.log("Presentation structure:", JSON.stringify(presentationDoc, null, 2));
     }
 
     const slideFiles = Object.keys(zipContent.files)
@@ -45,11 +45,13 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
 
     for (const slideFile of slideFiles) {
       try {
-        console.log(`Processing ${slideFile}`);
+        console.log(`\nProcessing ${slideFile}`);
         const slideContent = await zipContent.files[slideFile].async('string');
-        console.log(`Raw slide content sample:`, slideContent.substring(0, 200));
+        console.log(`Raw slide content:`, slideContent);
         
         const xmlDoc = parseXMLContent(slideContent);
+        console.log("Parsed XML structure:", JSON.stringify(xmlDoc, null, 2));
+        
         const slideIndex = parseInt(slideFile.match(/slide([0-9]+)\.xml/)?.[1] || '0');
         
         // Extract title
@@ -68,10 +70,14 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
         const notes = await extractNotes(zipContent, slideIndex);
         console.log(`Found ${notes.length} notes in slide ${slideIndex}`);
         
+        // Filter out title from content to avoid duplication
+        const slideContent = content.filter(text => text !== title);
+        console.log(`Final slide ${slideIndex} content:`, slideContent);
+
         processedContent.slides.push({
           index: slideIndex,
           title,
-          content: content.filter(text => text !== title),
+          content: slideContent,
           notes,
           shapes
         });
@@ -94,6 +100,7 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
     processedContent.slides.sort((a, b) => a.index - b.index);
     
     console.log("PPTX processing completed successfully");
+    console.log("Processed content:", JSON.stringify(processedContent, null, 2));
     return processedContent;
   } catch (error) {
     console.error('Error processing PPTX content:', error);

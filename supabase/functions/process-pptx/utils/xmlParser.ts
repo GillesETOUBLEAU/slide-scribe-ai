@@ -12,33 +12,59 @@ export function extractTextContent(node: any): string[] {
   const textContents: string[] = [];
   
   function walkNode(n: any) {
-    // Handle PowerPoint text elements
-    if (n.name === 'a:t' && n.children) {
-      const text = n.children
-        .filter((child: any) => child.type === 'text')
-        .map((child: any) => child.content.toString())
-        .join('')
-        .trim();
-      
+    if (!n) return;
+
+    // Log node structure for debugging
+    console.log("Processing node:", {
+      name: n.name,
+      type: n.type,
+      hasChildren: !!n.children,
+      childCount: n.children?.length
+    });
+
+    // Handle direct text content
+    if (n.type === 'text' && typeof n.content === 'string') {
+      const text = n.content.trim();
       if (text) {
+        console.log("Found text content:", text);
         textContents.push(text);
       }
     }
     
-    // Handle text runs and paragraphs
-    if (n.name === 'a:r' || n.name === 'a:p' || n.name === 'p:txBody') {
-      if (Array.isArray(n.children)) {
-        n.children.forEach(walkNode);
+    // Handle PowerPoint text elements
+    if (n.name === 'a:t') {
+      let text = '';
+      if (n.children) {
+        text = n.children
+          .filter((child: any) => child.type === 'text')
+          .map((child: any) => child.content.toString().trim())
+          .join(' ')
+          .trim();
+      }
+      
+      if (text) {
+        console.log("Found PowerPoint text element:", text);
+        textContents.push(text);
       }
     }
     
-    // Recursively process other elements
+    // Recursively process children for text runs and paragraphs
     if (Array.isArray(n.children)) {
+      // PowerPoint specific elements that might contain text
+      if (['p:sp', 'a:p', 'a:r', 'p:txBody'].includes(n.name)) {
+        console.log(`Processing PowerPoint element: ${n.name}`);
+      }
+      
       n.children.forEach(walkNode);
     }
   }
   
   walkNode(node);
+  
+  // Log extracted content
+  console.log("Total extracted text items:", textContents.length);
+  console.log("Extracted content:", textContents);
+  
   return textContents.filter(text => text.trim() !== '');
 }
 
