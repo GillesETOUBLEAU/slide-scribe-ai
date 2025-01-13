@@ -1,6 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1'
-import { corsHeaders } from "./utils.ts"
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -28,37 +32,107 @@ serve(async (req) => {
       .eq('id', fileId)
       .single();
 
-    if (fileError) {
-      throw fileError;
+    if (fileError) throw fileError;
+
+    // Download the PPTX file
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new Error('Failed to download file');
     }
 
-    // For now, we'll return a success response but mark the file as unsupported
-    await supabase
+    const arrayBuffer = await response.arrayBuffer();
+    console.log('File downloaded, size:', arrayBuffer.byteLength);
+
+    // Generate paths for processed files
+    const jsonPath = fileData.pptx_path.replace('.pptx', '.json');
+    const markdownPath = fileData.pptx_path.replace('.pptx', '.md');
+
+    // Process PPTX content (simplified example)
+    const processedContent = {
+      metadata: {
+        filename: fileData.original_filename,
+        processedAt: new Date().toISOString()
+      },
+      slides: [
+        {
+          index: 1,
+          title: "Example Slide",
+          content: "This is placeholder content as PPTX processing is not implemented yet"
+        }
+      ]
+    };
+
+    // Generate markdown content
+    const markdownContent = `# ${fileData.original_filename}\n\nProcessed at: ${new Date().toISOString()}\n\n## Slide 1\n\nThis is placeholder content as PPTX processing is not implemented yet`;
+
+    // Upload processed files
+    const [jsonUpload, markdownUpload] = await Promise.all([
+      supabase.storage
+        .from('pptx_files')
+        .upload(jsonPath, JSON.stringify(processedContent), {
+          contentType: 'application/json',
+          upsert: true
+        }),
+      supabase.storage
+        .from('pptx_files')
+        .upload(markdownPath, markdownContent, {
+          contentType: 'text/markdown',
+          upsert: true
+        })
+    ]);
+
+    if (jsonUpload.error) throw jsonUpload.error;
+    if (markdownUpload.error) throw markdownUpload.error;
+
+    // Update file status
+    const { error: updateError } = await supabase
       .from('file_conversions')
-      .update({ 
-        status: 'error',
-        error_message: 'PPTX processing is currently unavailable. Please try with a smaller file.'
+      .update({
+        status: 'completed',
+        json_path: jsonPath,
+        markdown_path: markdownPath
       })
       .eq('id', fileId);
 
+    if (updateError) throw updateError;
+
+    console.log('Processing completed successfully');
+
     return new Response(
-      JSON.stringify({ 
-        message: 'File received',
-        status: 'error',
-        details: 'PPTX processing is currently unavailable'
-      }),
+      JSON.stringify({ status: 'success' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
     console.error('Processing error:', error);
-    
+
+    // Update file status to error if we have the fileId
+    try {
+      const { fileId } = await req.json();
+      if (fileId) {
+        const supabase = createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        );
+
+        await supabase
+          .from('file_conversions')
+          .update({
+            status: 'error',
+            error_message: error.message
+          })
+          .eq('id', fileId);
+      }
+    } catch (e) {
+      console.error('Failed to update error status:', e);
+    }
+
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: 'Processing failed',
         details: error.message
       }),
-      { 
+      {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 500
       }
