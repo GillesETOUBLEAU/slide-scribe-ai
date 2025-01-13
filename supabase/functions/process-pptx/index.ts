@@ -9,8 +9,11 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  console.log("Received request:", req.method);
+  
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
+    console.log("Handling CORS preflight request");
     return new Response(null, { 
       status: 204,
       headers: corsHeaders 
@@ -21,7 +24,7 @@ serve(async (req) => {
     // Parse request body
     const requestData = await req.json();
     const { fileId, filePath } = requestData;
-    console.log("Processing file:", { fileId, filePath });
+    console.log("Processing request for:", { fileId, filePath });
 
     if (!fileId || !filePath) {
       throw new Error('Missing required parameters: fileId and filePath are required');
@@ -54,11 +57,12 @@ serve(async (req) => {
     );
 
     if (!updateResponse.ok) {
+      console.error("Failed to update status:", updateResponse.status, updateResponse.statusText);
       throw new Error(`Failed to update status to processing: ${updateResponse.statusText}`);
     }
 
     // Download the PPTX file
-    console.log("Downloading PPTX file from storage");
+    console.log("Downloading PPTX file");
     const fileResponse = await fetch(
       `${supabaseUrl}/storage/v1/object/public/pptx_files/${filePath}`,
       {
@@ -76,11 +80,10 @@ serve(async (req) => {
 
     const fileBlob = await fileResponse.blob();
     console.log("File downloaded successfully, size:", fileBlob.size);
-    
-    // Process the PPTX content
-    console.log("Processing PPTX content");
+
+    // Process the file content
+    console.log("Processing file content");
     const processedContent = await processSlideContent(fileBlob);
-    processedContent.metadata.filePath = filePath;
 
     // Generate file paths
     const jsonPath = filePath.replace('.pptx', '.json');
@@ -109,11 +112,10 @@ serve(async (req) => {
     }
 
     // Generate and upload markdown
-    console.log("Generating markdown content");
-    const markdownContent = `# ${processedContent.metadata.filename}\n\n` +
-      processedContent.slides.map(slide => 
-        `## Slide ${slide.index}\n\n${slide.content.join('\n\n')}\n\n`
-      ).join('\n');
+    console.log("Generating and uploading markdown");
+    const markdownContent = processedContent.slides
+      .map(slide => `## Slide ${slide.index}\n\n${slide.content.join('\n\n')}\n\n`)
+      .join('\n');
 
     const markdownBlob = new Blob([markdownContent], { type: 'text/markdown' });
     
@@ -133,8 +135,8 @@ serve(async (req) => {
       throw new Error(`Failed to upload Markdown file: ${markdownUploadResponse.statusText}`);
     }
 
-    // Update file status
-    console.log("Updating file status");
+    // Update file status to completed
+    console.log("Updating file status to completed");
     const finalUpdateResponse = await fetch(
       `${supabaseUrl}/rest/v1/file_conversions?id=eq.${fileId}`,
       {
@@ -166,7 +168,6 @@ serve(async (req) => {
   } catch (error) {
     console.error('Processing error:', error);
     
-    // Update the file status to error if we have the fileId
     try {
       const { fileId } = await req.json();
       if (fileId) {

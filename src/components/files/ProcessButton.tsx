@@ -32,10 +32,7 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
 
       // Call the edge function to process the file
       const { data, error } = await supabase.functions.invoke('process-pptx', {
-        body: payload,
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        body: payload
       });
 
       if (error) {
