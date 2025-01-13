@@ -11,26 +11,37 @@ export function parseXMLContent(content: string) {
 export function extractTextContent(node: any): string[] {
   const textContents: string[] = [];
   
-  const walkTextContent = (n: any) => {
+  function walkNode(n: any) {
+    // Check for text content in various PPTX XML elements
     if (n.name === 'a:t' && n.content) {
       const text = Array.isArray(n.content) 
         ? n.content.join('').trim()
         : String(n.content).trim();
       if (text) textContents.push(text);
     }
-    if (n.children) {
-      n.children.forEach(walkTextContent);
+    
+    // Special handling for paragraphs and text runs
+    if (n.name === 'p:sp' || n.name === 'a:p' || n.name === 'a:r') {
+      if (n.children) {
+        n.children.forEach(walkNode);
+      }
     }
-  };
+    
+    // Recursively process all children
+    if (n.children) {
+      n.children.forEach(walkNode);
+    }
+  }
   
-  walkTextContent(node);
+  walkNode(node);
   return textContents;
 }
 
 export function findTitle(node: any): string {
   let title = '';
   
-  const findTitleNode = (n: any): boolean => {
+  function walkTitleNode(n: any): boolean {
+    // Check specific title-related elements
     if (n.name === 'p:title' || n.name === 'p:cSld') {
       const titleTexts = extractTextContent(n);
       if (titleTexts.length > 0) {
@@ -38,14 +49,27 @@ export function findTitle(node: any): string {
         return true;
       }
     }
+    
+    // Check for title placeholder
+    if (n.name === 'p:ph' && n.attributes?.type === 'title') {
+      const parent = n.parent;
+      if (parent) {
+        const texts = extractTextContent(parent);
+        if (texts.length > 0) {
+          title = texts.join(' ');
+          return true;
+        }
+      }
+    }
+    
     if (n.children) {
       for (const child of n.children) {
-        if (findTitleNode(child)) return true;
+        if (walkTitleNode(child)) return true;
       }
     }
     return false;
-  };
+  }
   
-  findTitleNode(node);
-  return title;
+  walkTitleNode(node);
+  return title || 'Untitled Slide';
 }

@@ -31,23 +31,43 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
 
     for (const [index, slideFile] of slideFiles.entries()) {
       console.log(`Processing slide ${index + 1}: ${slideFile}`);
-      const slideContent = await zipContent.files[slideFile].async('string');
-      const xmlDoc = parseXMLContent(slideContent);
+      
+      try {
+        const slideContent = await zipContent.files[slideFile].async('string');
+        const xmlDoc = parseXMLContent(slideContent);
 
-      const title = findTitle(xmlDoc) || `Slide ${index + 1}`;
-      const content = extractTextContent(xmlDoc).filter(text => text !== title);
-      const notes = await extractNotes(zipContent, index + 1);
-      const shapes = extractShapes(xmlDoc);
+        // Extract slide content
+        const title = findTitle(xmlDoc);
+        const content = extractTextContent(xmlDoc)
+          .filter(text => text !== title)
+          .filter(text => text.trim() !== '');
+          
+        console.log(`Slide ${index + 1} content:`, content);
 
-      processedContent.slides.push({
-        index: index + 1,
-        title,
-        content,
-        notes,
-        shapes
-      });
+        // Extract notes and shapes
+        const notes = await extractNotes(zipContent, index + 1);
+        const shapes = extractShapes(xmlDoc);
 
-      console.log(`Completed processing slide ${index + 1}`);
+        processedContent.slides.push({
+          index: index + 1,
+          title: title || `Slide ${index + 1}`,
+          content,
+          notes,
+          shapes
+        });
+
+        console.log(`Completed processing slide ${index + 1}`);
+      } catch (error) {
+        console.error(`Error processing slide ${index + 1}:`, error);
+        // Add an error slide
+        processedContent.slides.push({
+          index: index + 1,
+          title: `Slide ${index + 1} (Error)`,
+          content: [`Error processing slide: ${error.message}`],
+          notes: [],
+          shapes: []
+        });
+      }
     }
 
     // Add default slide if no slides were found
