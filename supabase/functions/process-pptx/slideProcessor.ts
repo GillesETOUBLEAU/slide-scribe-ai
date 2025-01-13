@@ -1,6 +1,6 @@
 import { FileData } from "./types.ts";
 import JSZip from "https://esm.sh/jszip@3.10.1";
-import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
+import { parse as parseXML } from "https://deno.land/x/xml@2.1.3/mod.ts";
 
 export async function processSlideContent(fileData: Blob): Promise<FileData> {
   try {
@@ -33,45 +33,78 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
     for (const [index, slideFile] of slideFiles.entries()) {
       console.log(`Processing slide ${index + 1}: ${slideFile}`);
       const slideContent = await zipContent.files[slideFile].async('string');
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(slideContent, 'text/xml');
+      const xmlDoc = parseXML(slideContent);
       
-      if (!doc) {
+      if (!xmlDoc) {
         console.warn(`Could not parse slide ${index + 1}`);
         continue;
       }
 
-      // Extract text content
-      const textElements = doc.querySelectorAll('a\\:t');
-      const textContents = Array.from(textElements)
-        .map(el => el.textContent?.trim())
-        .filter((text): text is string => !!text);
+      // Extract text content from 'a:t' elements
+      const textContents: string[] = [];
+      const walkNode = (node: any) => {
+        if (node.name === 'a:t' && node.content) {
+          const text = Array.isArray(node.content) 
+            ? node.content.join('').trim()
+            : node.content.trim();
+          if (text) textContents.push(text);
+        }
+        if (node.children) {
+          node.children.forEach(walkNode);
+        }
+      };
+      walkNode(xmlDoc);
 
       // First text element is usually the title
       const title = textContents[0] || `Slide ${index + 1}`;
       const content = textContents.slice(1);
 
       // Extract shapes
-      const shapes = Array.from(doc.querySelectorAll('p\\:sp')).map(shape => {
-        const nvSpPr = shape.querySelector('p\\:nvSpPr');
-        const txBody = shape.querySelector('p\\:txBody');
-        return {
-          type: nvSpPr?.textContent?.trim() || 'shape',
-          text: txBody?.textContent?.trim() || ''
-        };
-      });
+      const shapes: Array<{ type: string; text: string }> = [];
+      const walkShapes = (node: any) => {
+        if (node.name === 'p:sp') {
+          let shapeType = 'shape';
+          let shapeText = '';
+          
+          const walkForText = (n: any) => {
+            if (n.name === 'a:t' && n.content) {
+              shapeText = Array.isArray(n.content) 
+                ? n.content.join('').trim()
+                : n.content.trim();
+            }
+            if (n.children) {
+              n.children.forEach(walkForText);
+            }
+          };
+          
+          walkForText(node);
+          shapes.push({ type: shapeType, text: shapeText });
+        }
+        if (node.children) {
+          node.children.forEach(walkShapes);
+        }
+      };
+      walkShapes(xmlDoc);
 
       // Try to get notes
       const notesFile = `ppt/notesSlides/notesSlide${index + 1}.xml`;
       let notes: string[] = [];
       if (zipContent.files[notesFile]) {
         const notesContent = await zipContent.files[notesFile].async('string');
-        const notesDoc = parser.parseFromString(notesContent, 'text/xml');
+        const notesDoc = parseXML(notesContent);
         if (notesDoc) {
-          const noteElements = notesDoc.querySelectorAll('a\\:t');
-          notes = Array.from(noteElements)
-            .map(el => el.textContent?.trim())
-            .filter((text): text is string => !!text);
+          const walkNotes = (node: any) => {
+            if (node.name === 'a:t' && node.content) {
+              const text = Array.isArray(node.content) 
+                ? node.content.join('').trim()
+                : node.content.trim();
+              if (text) notes.push(text);
+            }
+            if (node.children) {
+              node.children.forEach(walkNotes);
+            }
+          };
+          walkNotes(notesDoc);
         }
       }
 
