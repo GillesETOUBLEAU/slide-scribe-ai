@@ -3,6 +3,7 @@ export interface FileData {
     processedAt: string;
     filename: string;
     slideCount: number;
+    filePath?: string;
   };
   slides: Slide[];
 }
