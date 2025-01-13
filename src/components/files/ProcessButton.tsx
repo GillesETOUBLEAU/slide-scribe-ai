@@ -14,6 +14,14 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
 
   const handleProcess = async () => {
     try {
+      // Update status to processing
+      const { error: updateError } = await supabase
+        .from("file_conversions")
+        .update({ status: 'processing' })
+        .eq('id', id);
+
+      if (updateError) throw updateError;
+
       const { data: { publicUrl } } = supabase.storage
         .from("pptx_files")
         .getPublicUrl(pptx_path);
@@ -34,6 +42,15 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
 
       onProcess();
     } catch (error) {
+      // Update status back to uploaded if processing fails to start
+      await supabase
+        .from("file_conversions")
+        .update({ 
+          status: 'uploaded',
+          error_message: error instanceof Error ? error.message : "Unknown error occurred"
+        })
+        .eq('id', id);
+
       toast({
         variant: "destructive",
         title: "Processing failed",

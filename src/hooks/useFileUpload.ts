@@ -28,7 +28,7 @@ export const useFileUpload = (userId: string, onUploadComplete: () => void) => {
 
       if (uploadError) throw uploadError;
 
-      // Create database record
+      // Create database record with explicit status
       console.log("Creating database record");
       const { error: dbError } = await supabase
         .from("file_conversions")
@@ -36,7 +36,7 @@ export const useFileUpload = (userId: string, onUploadComplete: () => void) => {
           user_id: userId,
           original_filename: file.name,
           pptx_path: pptxPath,
-          status: 'uploaded'  // Changed from 'processing' to 'uploaded'
+          status: 'uploaded'
         });
 
       if (dbError) throw dbError;
