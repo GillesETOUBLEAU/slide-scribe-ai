@@ -1,7 +1,6 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.1.0";
 import JSZip from "https://esm.sh/jszip@3.10.1";
 import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
-import { processSlides } from "./slideProcessor.ts";
 import type { FileData } from "./types.ts";
 
 export async function handleFileProcessing(fileId: string, filePath: string) {
@@ -84,7 +83,21 @@ async function processFile(fileData: ArrayBuffer): Promise<FileData> {
     .filter(([name]) => name.startsWith('ppt/slides/slide'))
     .sort(([a], [b]) => a.localeCompare(b));
 
-  const slides = await processSlides(slideEntries, zipContent);
+  const slides = await Promise.all(
+    slideEntries.map(async ([name, file], index) => {
+      const content = await file.async('string');
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(content, 'text/xml');
+      
+      return {
+        index: index + 1,
+        title: extractTitle(doc) || `Slide ${index + 1}`,
+        content: extractContent(doc),
+        notes: await extractNotes(zipContent, index + 1),
+        shapes: extractShapes(doc)
+      };
+    })
+  );
 
   return {
     metadata: {
@@ -94,6 +107,40 @@ async function processFile(fileData: ArrayBuffer): Promise<FileData> {
     },
     slides,
   };
+}
+
+function extractTitle(doc: Document): string {
+  const titleElement = doc.querySelector('p\\:title, title');
+  return titleElement?.textContent?.trim() || '';
+}
+
+function extractContent(doc: Document): string[] {
+  const textElements = doc.querySelectorAll('a\\:t');
+  return Array.from(textElements)
+    .map(el => el.textContent?.trim())
+    .filter((text): text is string => !!text);
+}
+
+async function extractNotes(zip: JSZip, slideNumber: number): Promise<string[]> {
+  const notesFile = zip.file(`ppt/notesSlides/notesSlide${slideNumber}.xml`);
+  if (!notesFile) return [];
+
+  const content = await notesFile.async('string');
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(content, 'text/xml');
+  
+  const noteElements = doc.querySelectorAll('a\\:t');
+  return Array.from(noteElements)
+    .map(el => el.textContent?.trim())
+    .filter((text): text is string => !!text);
+}
+
+function extractShapes(doc: Document): { type: string; text: string; }[] {
+  const shapes = doc.querySelectorAll('p\\:sp');
+  return Array.from(shapes).map(shape => ({
+    type: shape.querySelector('p\\:nvSpPr')?.textContent?.trim() || 'shape',
+    text: shape.querySelector('a\\:t')?.textContent?.trim() || ''
+  }));
 }
 
 function generateMarkdown(content: FileData): string {
