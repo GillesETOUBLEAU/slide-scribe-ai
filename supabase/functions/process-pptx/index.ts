@@ -4,7 +4,12 @@ import { downloadAndProcessFile, uploadProcessedFiles } from "./utils/fileProces
 import { updateFileStatus } from "./utils/databaseOperations.ts";
 
 serve(async (req) => {
-  console.log("Received request:", req.method);
+  // Add detailed logging
+  console.log("Request received:", {
+    method: req.method,
+    url: req.url,
+    headers: Object.fromEntries(req.headers.entries())
+  });
   
   if (req.method === 'OPTIONS') {
     console.log("Handling CORS preflight request");
@@ -13,36 +18,36 @@ serve(async (req) => {
 
   try {
     const requestData = await req.json();
+    console.log("Request data:", requestData);
+    
     const { fileId, filePath } = requestData;
-    console.log("Processing request for:", { fileId, filePath });
-
     if (!fileId || !filePath) {
       throw new Error('Missing required parameters: fileId and filePath are required');
     }
 
+    // Validate environment variables
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Missing required environment variables');
     }
 
-    // Update status to processing
+    console.log("Starting processing for file:", fileId);
     await updateFileStatus(supabaseUrl, supabaseKey, fileId, 'processing');
 
-    // Process the file
     const processedContent = await downloadAndProcessFile(supabaseUrl, supabaseKey, filePath);
+    console.log("File processed successfully");
 
-    // Upload processed files
     const { jsonPath, markdownPath } = await uploadProcessedFiles(
       supabaseUrl,
       supabaseKey,
       filePath,
       processedContent
     );
+    console.log("Processed files uploaded successfully");
 
-    // Update status to completed
     await updateFileStatus(supabaseUrl, supabaseKey, fileId, 'completed', { jsonPath, markdownPath });
+    console.log("Processing completed successfully");
 
     return createSuccessResponse({ success: true });
 
@@ -70,8 +75,6 @@ serve(async (req) => {
       console.error('Error updating file status:', updateError);
     }
 
-    return createErrorResponse(
-      error instanceof Error ? error : new Error("Unknown error occurred")
-    );
+    return createErrorResponse(error);
   }
 });

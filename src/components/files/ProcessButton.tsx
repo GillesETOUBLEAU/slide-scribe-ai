@@ -31,7 +31,10 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
       console.log("Invoking process-pptx function with payload:", payload);
 
       const { data, error } = await supabase.functions.invoke('process-pptx', {
-        body: payload
+        body: payload,
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
 
       if (error) {
@@ -50,6 +53,7 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
     } catch (error) {
       console.error("Processing failed:", error);
       
+      // Update status back to uploaded on error
       await supabase
         .from("file_conversions")
         .update({ 
