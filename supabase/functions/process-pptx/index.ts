@@ -11,13 +11,14 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
     const { fileId, fileUrl } = await req.json();
-    console.log('Processing request for file:', fileId);
+    console.log('Starting processing for file:', fileId);
     console.log('File URL:', fileUrl);
 
     if (!fileId || !fileUrl) {
@@ -30,13 +31,19 @@ serve(async (req) => {
     );
 
     // Update status to processing
-    await supabase
+    console.log('Updating status to processing');
+    const { error: statusError } = await supabase
       .from('file_conversions')
       .update({ status: 'processing' })
       .eq('id', fileId);
 
-    // Download the file using the Supabase client instead of direct URL
-    const bucketPath = fileUrl.split('/object/public/pptx_files/')[1];
+    if (statusError) {
+      console.error('Error updating status:', statusError);
+      throw statusError;
+    }
+
+    // Extract bucket path from URL
+    const bucketPath = decodeURIComponent(fileUrl.split('/object/public/pptx_files/')[1]);
     if (!bucketPath) {
       throw new Error('Invalid file URL format');
     }
@@ -60,14 +67,16 @@ serve(async (req) => {
     // Convert Blob to ArrayBuffer
     const arrayBuffer = await fileData.arrayBuffer();
     
+    console.log('Parsing XLSX file');
     const workbook = XLSX.read(new Uint8Array(arrayBuffer), {
       type: 'array',
-      cellFormulas: true,
+      cellFormulas: false,
       cellDates: true,
       cellNF: true,
     });
 
     console.log('XLSX file parsed successfully');
+    console.log('Number of sheets:', workbook.SheetNames.length);
 
     const structuredContent: ProcessedContent = {
       metadata: {
@@ -82,11 +91,10 @@ serve(async (req) => {
     const jsonPath = bucketPath.replace('.pptx', '.json');
     const markdownPath = bucketPath.replace('.pptx', '.md');
     
+    console.log('Uploading processed files');
     const markdown = convertToMarkdown(structuredContent);
 
-    console.log('Uploading processed files');
-    
-    await Promise.all([
+    const [jsonUpload, markdownUpload] = await Promise.all([
       supabase.storage
         .from('pptx_files')
         .upload(jsonPath, JSON.stringify(structuredContent), {
@@ -101,7 +109,11 @@ serve(async (req) => {
         })
     ]);
 
-    await supabase
+    if (jsonUpload.error) throw jsonUpload.error;
+    if (markdownUpload.error) throw markdownUpload.error;
+
+    console.log('Updating file status to completed');
+    const { error: updateError } = await supabase
       .from('file_conversions')
       .update({
         status: 'completed',
@@ -109,6 +121,8 @@ serve(async (req) => {
         markdown_path: markdownPath
       })
       .eq('id', fileId);
+
+    if (updateError) throw updateError;
 
     console.log('Processing completed successfully');
     return new Response(
@@ -119,7 +133,6 @@ serve(async (req) => {
   } catch (error) {
     console.error('Processing error:', error);
     
-    // Only attempt to update the status if we have fileId
     try {
       const { fileId } = await req.json();
       if (fileId) {
