@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.1.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@1.35.7";
 import JSZip from "https://esm.sh/jszip@3.10.1";
 import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
 import type { FileData } from "./types.ts";
