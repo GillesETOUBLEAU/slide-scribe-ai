@@ -29,8 +29,9 @@ serve(async (req) => {
     let payload;
     try {
       const body = await req.text();
-      console.log("Request body:", body);
+      console.log("Raw request body:", body);
       payload = JSON.parse(body);
+      console.log("Parsed payload:", payload);
     } catch (e) {
       console.error("Error parsing request body:", e);
       throw new Error("Invalid JSON payload");
