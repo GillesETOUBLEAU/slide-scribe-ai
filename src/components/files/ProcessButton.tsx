@@ -30,7 +30,6 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
       const payload = { fileId: id, filePath: pptx_path };
       console.log("Invoking process-pptx function with payload:", payload);
 
-      // Call the edge function to process the file
       const { data, error } = await supabase.functions.invoke('process-pptx', {
         body: payload
       });
@@ -47,12 +46,10 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
         description: "Your file is being processed. This may take a few moments.",
       });
 
-      // Trigger refresh of file list
       onProcess();
     } catch (error) {
       console.error("Processing failed:", error);
       
-      // Update status back to uploaded if processing fails
       await supabase
         .from("file_conversions")
         .update({ 
