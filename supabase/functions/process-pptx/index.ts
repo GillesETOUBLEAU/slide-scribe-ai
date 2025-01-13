@@ -1,51 +1,30 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1'
-import * as XLSX from 'https://esm.sh/xlsx@0.18.5'
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import { parse } from 'https://esm.sh/pptx-parser@1.0.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+};
 
 async function extractPPTXContent(arrayBuffer: ArrayBuffer, filename: string) {
   try {
-    // Read the PPTX file
-    const workbook = XLSX.read(arrayBuffer, {
-      cellStyles: true,
-      cellFormulas: true,
-      cellDates: true,
-      cellNF: true,
-      sheetStubs: true
-    });
-
-    // Initialize the structured content
+    const presentation = await parse(arrayBuffer);
+    
     const structuredContent = {
       metadata: {
         filename: filename,
         processedAt: new Date().toISOString(),
+        slideCount: presentation.slides.length
       },
-      slides: [] as any[]
-    };
-
-    // Process each sheet (slide)
-    workbook.SheetNames.forEach((sheetName, index) => {
-      const sheet = workbook.Sheets[sheetName];
-      const slideContent = {
+      slides: presentation.slides.map((slide, index) => ({
         index: index + 1,
-        title: extractSlideTitle(sheet),
-        content: [],
-        notes: extractNotes(sheet),
-        shapes: extractShapes(sheet)
-      };
-
-      // Extract text content
-      const textContent = XLSX.utils.sheet_to_json(sheet, { header: 1 })
-        .flat()
-        .filter(cell => cell && typeof cell === 'string');
-
-      slideContent.content = textContent;
-      structuredContent.slides.push(slideContent);
-    });
+        title: extractSlideTitle(slide),
+        content: extractSlideContent(slide),
+        notes: slide.notes || [],
+        shapes: extractShapes(slide)
+      }))
+    };
 
     return {
       json: structuredContent,
@@ -57,46 +36,45 @@ async function extractPPTXContent(arrayBuffer: ArrayBuffer, filename: string) {
   }
 }
 
-function extractSlideTitle(sheet: XLSX.WorkSheet): string {
-  // Attempt to find title in common locations
-  const titleCells = ['A1', 'B1', 'C1'];
-  for (const cell of titleCells) {
-    if (sheet[cell] && sheet[cell].v) {
-      return sheet[cell].v.toString();
-    }
-  }
-  return 'Untitled Slide';
+function extractSlideTitle(slide: any) {
+  // Look for title in slide properties
+  if (slide.title) return slide.title;
+  
+  // Look for first text shape that might be a title
+  const titleShape = slide.shapes?.find(shape => 
+    shape.type === 'title' || 
+    (shape.type === 'text' && shape.properties?.isTitle)
+  );
+  
+  return titleShape?.text || 'Untitled Slide';
 }
 
-function extractNotes(sheet: XLSX.WorkSheet): string[] {
-  // Look for notes in the sheet's comments or specific cells
-  const notes: string[] = [];
-  if (sheet['!comments']) {
-    Object.values(sheet['!comments']).forEach(comment => {
-      if (comment.t) notes.push(comment.t);
-    });
-  }
-  return notes;
-}
-
-function extractShapes(sheet: XLSX.WorkSheet): Array<{ type: string; text: string }> {
-  // Extract shape data if available
-  const shapes: Array<{ type: string; text: string }> = [];
-  if (sheet['!drawings']) {
-    sheet['!drawings'].forEach((drawing: any) => {
-      if (drawing.shape) {
-        shapes.push({
-          type: drawing.shape.type,
-          text: drawing.shape.text || ''
-        });
+function extractSlideContent(slide: any) {
+  const content: string[] = [];
+  
+  // Extract text from all shapes
+  if (slide.shapes) {
+    slide.shapes.forEach((shape: any) => {
+      if (shape.text) {
+        content.push(shape.text);
       }
     });
   }
-  return shapes;
+  
+  return content;
+}
+
+function extractShapes(slide: any) {
+  return slide.shapes?.map((shape: any) => ({
+    type: shape.type || 'unknown',
+    text: shape.text || ''
+  })) || [];
 }
 
 function convertToMarkdown(structuredContent: any): string {
   let markdown = `# ${structuredContent.metadata.filename}\n\n`;
+  markdown += `Processed at: ${structuredContent.metadata.processedAt}\n`;
+  markdown += `Total Slides: ${structuredContent.metadata.slideCount}\n\n`;
 
   structuredContent.slides.forEach((slide: any) => {
     markdown += `## Slide ${slide.index}: ${slide.title}\n\n`;
@@ -119,7 +97,7 @@ function convertToMarkdown(structuredContent: any): string {
     // Add shapes if present
     if (slide.shapes.length > 0) {
       markdown += '### Shapes\n\n';
-      slide.shapes.forEach((shape: { type: string; text: string }) => {
+      slide.shapes.forEach((shape: any) => {
         markdown += `- ${shape.type}: ${shape.text}\n`;
       });
       markdown += '\n';
@@ -155,7 +133,6 @@ serve(async (req) => {
       .single();
 
     if (fileError) throw fileError;
-    
     console.log('File data retrieved:', fileData);
 
     // Download the PPTX file
