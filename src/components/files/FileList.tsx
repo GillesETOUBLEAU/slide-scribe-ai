@@ -30,7 +30,13 @@ export const FileList = () => {
       return;
     }
 
-    setFiles(data || []);
+    // Cast the status to ensure it matches the FileConversion type
+    const typedData = (data || []).map(file => ({
+      ...file,
+      status: file.status as FileConversion['status']
+    }));
+
+    setFiles(typedData);
   };
 
   useEffect(() => {

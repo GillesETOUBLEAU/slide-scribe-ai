@@ -14,16 +14,24 @@ async function processFile(supabase: any, fileId: string, fileUrl: string) {
   console.log('Starting file processing:', fileId);
   
   try {
+    // Update status to processing
     await supabase
       .from('file_conversions')
       .update({ status: 'processing' })
       .eq('id', fileId);
 
+    console.log('Downloading file from URL:', fileUrl);
     const response = await fetch(fileUrl);
-    if (!response.ok) throw new Error('Failed to download file');
+    if (!response.ok) {
+      throw new Error(`Failed to download file: ${response.statusText}`);
+    }
     
     const arrayBuffer = await response.arrayBuffer();
-    console.log('File downloaded, size:', arrayBuffer.byteLength);
+    console.log('File downloaded successfully, size:', arrayBuffer.byteLength);
+
+    if (arrayBuffer.byteLength === 0) {
+      throw new Error('Downloaded file is empty');
+    }
 
     const workbook = XLSX.read(new Uint8Array(arrayBuffer), {
       type: 'array',
@@ -31,6 +39,8 @@ async function processFile(supabase: any, fileId: string, fileUrl: string) {
       cellDates: true,
       cellNF: true,
     });
+
+    console.log('XLSX file parsed successfully');
 
     const structuredContent: ProcessedContent = {
       metadata: {
@@ -48,11 +58,17 @@ async function processFile(supabase: any, fileId: string, fileUrl: string) {
       .eq('id', fileId)
       .single();
 
+    if (!fileData) {
+      throw new Error('File record not found');
+    }
+
     const jsonPath = fileData.pptx_path.replace('.pptx', '.json');
     const markdownPath = fileData.pptx_path.replace('.pptx', '.md');
     
     const markdown = convertToMarkdown(structuredContent);
 
+    console.log('Uploading processed files');
+    
     await Promise.all([
       supabase.storage
         .from('pptx_files')
@@ -87,7 +103,7 @@ async function processFile(supabase: any, fileId: string, fileUrl: string) {
       .from('file_conversions')
       .update({
         status: 'error',
-        error_message: error.message
+        error_message: error instanceof Error ? error.message : "Unknown error occurred"
       })
       .eq('id', fileId);
 
@@ -125,7 +141,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         error: 'Processing failed',
-        details: error.message
+        details: error instanceof Error ? error.message : 'Unknown error occurred'
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
