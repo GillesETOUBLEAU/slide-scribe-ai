@@ -71,7 +71,7 @@ function extractParagraphText(node: any): string[] {
   return texts;
 }
 
-function findNode(node: any, nodeName: string): any {
+export function findNode(node: any, nodeName: string): any {
   if (node.name === nodeName) return node;
   
   if (Array.isArray(node.children)) {
