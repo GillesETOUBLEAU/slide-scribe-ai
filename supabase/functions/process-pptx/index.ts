@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
-import * as XLSX from 'https://esm.sh/xlsx@0.18.5';
+import pptxgen from 'https://esm.sh/pptxjs@3.12.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,102 +44,38 @@ serve(async (req) => {
 
     console.log('File downloaded successfully, size:', fileData.size);
 
-    // Convert Blob to ArrayBuffer
+    // Process PPTX content using pptxjs
+    const pptx = new pptxgen();
     const arrayBuffer = await fileData.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
+    await pptx.load(arrayBuffer);
 
-    console.log('Attempting to read PPTX file...');
-    
-    // Try to read the file with different options
-    let workbook;
-    try {
-      workbook = XLSX.read(uint8Array, {
-        type: 'array',
-        cellFormulas: false,
-        cellStyles: false,
-        cellNF: false,
-        cellDates: false,
-        bookVBA: true, // Enable VBA/macro reading
-        bookFiles: true // Enable embedded file reading
-      });
-    } catch (readError) {
-      console.error('Failed to read workbook:', readError);
+    // Extract content from slides
+    const slides = [];
+    pptx.getSlides().forEach((slide, index) => {
+      const slideContent = [];
       
-      // Create a simple placeholder structure if we can't read the PPTX
-      const filename = filePath.split('/').pop()?.replace('.pptx', '') || 'Untitled';
-      const structuredContent = {
-        metadata: {
-          processedAt: new Date().toISOString(),
-          sheetCount: 1,
-          error: "Could not process PPTX content"
-        },
-        slides: [{
-          index: 1,
-          title: filename,
-          content: ["This PPTX file could not be processed. It might be password-protected or in an unsupported format."],
-          notes: [],
-          shapes: []
-        }]
-      };
+      // Extract text from shapes
+      slide.getShapes().forEach(shape => {
+        if (shape.text) {
+          slideContent.push(shape.text);
+        }
+      });
 
-      // Generate file paths and content
-      const jsonPath = filePath.replace('.pptx', '.json');
-      const markdownPath = filePath.replace('.pptx', '.md');
-      const markdown = `# ${filename}\n\nThis PPTX file could not be processed. It might be password-protected or in an unsupported format.`;
+      slides.push({
+        index: index + 1,
+        title: `Slide ${index + 1}`,
+        content: slideContent,
+        notes: slide.getNotes() || [],
+        shapes: []
+      });
+    });
 
-      // Upload error results
-      await Promise.all([
-        supabase.storage
-          .from('pptx_files')
-          .upload(jsonPath, JSON.stringify(structuredContent, null, 2), {
-            contentType: 'application/json',
-            upsert: true
-          }),
-        supabase.storage
-          .from('pptx_files')
-          .upload(markdownPath, markdown, {
-            contentType: 'text/markdown',
-            upsert: true
-          })
-      ]);
-
-      // Update status to error
-      await supabase
-        .from('file_conversions')
-        .update({
-          status: 'error',
-          json_path: jsonPath,
-          markdown_path: markdownPath,
-          error_message: 'Could not process PPTX content: ' + readError.message
-        })
-        .eq('id', fileId);
-
-      throw new Error('Could not process PPTX content: ' + readError.message);
-    }
-
-    console.log('Workbook processed successfully, sheets:', workbook.SheetNames);
-
-    // Process the workbook content
     const structuredContent = {
       metadata: {
         processedAt: new Date().toISOString(),
-        sheetCount: workbook.SheetNames.length
+        sheetCount: slides.length
       },
-      slides: workbook.SheetNames.map((sheetName, index) => {
-        const sheet = workbook.Sheets[sheetName];
-        const textContent = XLSX.utils.sheet_to_json(sheet, { 
-          header: 1,
-          raw: false
-        }).flat().filter(cell => cell);
-
-        return {
-          index: index + 1,
-          title: sheetName,
-          content: textContent,
-          notes: [],
-          shapes: []
-        };
-      })
+      slides
     };
 
     // Generate file paths
@@ -148,8 +84,8 @@ serve(async (req) => {
     
     console.log('Creating markdown content');
     const markdown = `# ${filePath.split('/').pop()?.replace('.pptx', '')}\n\n` +
-      structuredContent.slides.map(slide => 
-        `## Slide ${slide.index}: ${slide.title}\n\n${slide.content.join('\n\n')}`
+      slides.map(slide => 
+        `## ${slide.title}\n\n${slide.content.join('\n\n')}`
       ).join('\n\n');
 
     console.log('Uploading processed files');
