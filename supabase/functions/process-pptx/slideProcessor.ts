@@ -11,20 +11,18 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
     const zip = new JSZip();
     const zipContent = await zip.loadAsync(arrayBuffer);
     console.log("PPTX file unzipped successfully");
-    console.log("Available files in PPTX:", Object.keys(zipContent.files));
+
+    const slideFiles = await extractSlideFiles(zipContent);
+    console.log(`Found ${slideFiles.length} slides`);
 
     const processedContent: FileData = {
       metadata: {
         processedAt: new Date().toISOString(),
         filename: 'presentation.pptx',
-        slideCount: 0
+        slideCount: slideFiles.length
       },
       slides: []
     };
-
-    const slideFiles = await extractSlideFiles(zipContent);
-    console.log("Found slide files:", slideFiles);
-    processedContent.metadata.slideCount = slideFiles.length;
 
     for (const slideFile of slideFiles) {
       try {
@@ -49,7 +47,6 @@ export async function processSlideContent(fileData: Blob): Promise<FileData> {
     processedContent.slides.sort((a, b) => a.index - b.index);
     
     console.log("PPTX processing completed successfully");
-    console.log("Processed content:", JSON.stringify(processedContent, null, 2));
     return processedContent;
   } catch (error) {
     console.error('Error processing PPTX content:', error);

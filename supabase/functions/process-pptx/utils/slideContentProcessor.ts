@@ -1,47 +1,83 @@
 import { Slide } from "../types.ts";
-import { parseXMLContent, extractTextContent, findTitle } from "./xmlParser.ts";
-import { extractShapes } from "./shapeExtractor.ts";
-import { extractNotes } from "./notesExtractor.ts";
-import JSZip from "https://esm.sh/jszip@3.10.1";
+import { DOMParser } from "https://deno.land/x/deno_dom/deno-dom-wasm.ts";
 
-export async function processSlide(
-  zipContent: JSZip,
-  slideFile: string,
-  slideContent: string
-): Promise<Slide> {
-  console.log(`\nProcessing ${slideFile}`);
-  
-  const xmlDoc = parseXMLContent(slideContent);
-  console.log("XML document structure:", JSON.stringify(xmlDoc, null, 2));
+export async function processSlide(zipContent: any, slideFile: string, slideContent: string): Promise<Slide> {
+  console.log(`Processing slide content for ${slideFile}`);
   
   const slideIndex = parseInt(slideFile.match(/slide([0-9]+)\.xml/)?.[1] || '0');
-  console.log(`Processing slide ${slideIndex}`);
+  console.log(`Slide index: ${slideIndex}`);
 
-  // Extract all text content first
-  const allTextContent = extractTextContent(xmlDoc);
-  console.log(`All text content from slide ${slideIndex}:`, allTextContent);
+  // Parse the XML content
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(slideContent, "text/xml");
   
-  // Find title (usually first shape or specific placeholder)
-  const title = findTitle(xmlDoc) || `Slide ${slideIndex}`;
-  console.log(`Title for slide ${slideIndex}:`, title);
+  if (!xmlDoc) {
+    console.error("Failed to parse XML document");
+    throw new Error("Failed to parse slide XML");
+  }
+
+  // Extract text content from paragraphs (similar to C# example)
+  const textElements = xmlDoc.getElementsByTagName("a:t");
+  const contentArray: string[] = [];
   
-  // Filter out title from content to avoid duplication
-  const content = allTextContent.filter(text => text !== title);
-  console.log(`Content for slide ${slideIndex}:`, content);
+  for (const textElement of textElements) {
+    const text = textElement.textContent?.trim();
+    if (text) {
+      console.log(`Found text content: ${text}`);
+      contentArray.push(text);
+    }
+  }
+
+  // Get slide title (usually the first text element in specific layouts)
+  const title = contentArray[0] || `Slide ${slideIndex}`;
   
-  // Extract shapes
-  const shapes = extractShapes(xmlDoc);
-  console.log(`Shapes for slide ${slideIndex}:`, shapes);
+  // Extract shape data
+  const shapes = xmlDoc.getElementsByTagName("p:sp");
+  const shapeData = [];
   
-  // Extract notes
-  const notes = await extractNotes(zipContent, slideIndex);
-  console.log(`Notes for slide ${slideIndex}:`, notes);
+  for (const shape of shapes) {
+    const shapeType = shape.getElementsByTagName("p:nvSpPr")[0]?.textContent;
+    const shapeText = shape.getElementsByTagName("a:t")[0]?.textContent;
+    
+    if (shapeType || shapeText) {
+      shapeData.push({
+        type: shapeType || "unknown",
+        text: shapeText || ""
+      });
+    }
+  }
+
+  // Extract notes if they exist
+  const notes: string[] = [];
+  try {
+    const notesXmlPath = slideFile.replace("slides/slide", "notesSlides/notesSlide");
+    const notesContent = await zipContent.file(notesXmlPath)?.async("text");
+    
+    if (notesContent) {
+      const notesDoc = parser.parseFromString(notesContent, "text/xml");
+      const noteTexts = notesDoc.getElementsByTagName("a:t");
+      
+      for (const noteText of noteTexts) {
+        const text = noteText.textContent?.trim();
+        if (text) {
+          notes.push(text);
+        }
+      }
+    }
+  } catch (error) {
+    console.log(`No notes found for slide ${slideIndex}: ${error.message}`);
+  }
+
+  console.log(`Completed processing slide ${slideIndex}`);
+  console.log(`Content array:`, contentArray);
+  console.log(`Notes:`, notes);
+  console.log(`Shapes:`, shapeData);
 
   return {
     index: slideIndex,
     title,
-    content,
+    content: contentArray,
     notes,
-    shapes
+    shapes: shapeData
   };
 }
