@@ -8,6 +8,13 @@ export const useFileUpload = (userId: string, onUploadComplete: () => void) => {
   const [progress, setProgress] = useState(0);
   const { toast } = useToast();
 
+  const sanitizeFilename = (filename: string): string => {
+    // Remove diacritics/accents
+    const normalized = filename.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    // Replace spaces and special characters with underscores
+    return normalized.replace(/[^a-zA-Z0-9.-]/g, '_');
+  };
+
   const uploadFile = async (file: File) => {
     if (!validateFile(file)) return;
 
@@ -16,13 +23,20 @@ export const useFileUpload = (userId: string, onUploadComplete: () => void) => {
 
     try {
       console.log("Starting file upload process for:", file.name);
-      const pptxPath = `${userId}/${crypto.randomUUID()}-${file.name}`;
+      
+      // Sanitize the filename while keeping the extension
+      const extension = file.name.split('.').pop();
+      const sanitizedName = sanitizeFilename(file.name);
+      const pptxPath = `${userId}/${crypto.randomUUID()}-${sanitizedName}`;
+      
+      // Create a new File object with the sanitized name
+      const sanitizedFile = new File([file], sanitizedName, { type: file.type });
       
       // Upload file to storage with progress tracking
       console.log("Uploading file to storage at path:", pptxPath);
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("pptx_files")
-        .upload(pptxPath, file, {
+        .upload(pptxPath, sanitizedFile, {
           cacheControl: '3600',
           upsert: true
         });
@@ -40,7 +54,7 @@ export const useFileUpload = (userId: string, onUploadComplete: () => void) => {
         .from("file_conversions")
         .insert({
           user_id: userId,
-          original_filename: file.name,
+          original_filename: file.name, // Keep original filename for display
           pptx_path: pptxPath,
           status: 'uploaded'
         })
