@@ -2,3 +2,4 @@ project_id = "siwlianoxnpmavinketo"
 
 [functions.process-pptx-python]
 verify_jwt = true
+language = "python"

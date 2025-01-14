@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import datetime
 from pptx import Presentation
 from supabase import create_client, Client
 from typing import Dict, Any
@@ -54,7 +55,7 @@ def process_pptx(file_path: str) -> Dict[str, Any]:
 async def handle_request(req):
     # Handle CORS preflight requests
     if req.method == "OPTIONS":
-        return new Response(None, { headers: cors_headers() })
+        return new Response(None, { "headers": cors_headers() })
     
     try:
         body = await req.json()
