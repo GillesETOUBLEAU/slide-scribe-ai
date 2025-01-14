@@ -33,10 +33,10 @@ export const ProcessButton = ({ id, pptx_path, onProcess }: ProcessButtonProps) 
         filePath: pptx_path
       };
       
-      console.log("Invoking process-pptx function with payload:", payload);
+      console.log("Invoking process-pptx-python function with payload:", payload);
 
-      // Call the edge function
-      const { data, error } = await supabase.functions.invoke('process-pptx', {
+      // Call the Python edge function
+      const { data, error } = await supabase.functions.invoke('process-pptx-python', {
         body: payload
       });
 
